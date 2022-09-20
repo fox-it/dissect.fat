@@ -4,6 +4,16 @@ A Dissect module implementing parsers for the FAT and exFAT file systems, common
 devices and UEFI partitions. For more information, please see [the
 documentation](https://dissect.readthedocs.io/en/latest/projects/dissect.fat).
 
+## Installation
+
+`dissect.fat` is available on [PyPI](https://pypi.org/project/dissect.fat/).
+
+```bash
+pip install dissect.fat
+```
+
+This module is also automatically installed if you install the `dissect` package.
+
 ## Build and test instructions
 
 This project uses `tox` to build source and wheel distributions. Run the following command from the root folder to build
