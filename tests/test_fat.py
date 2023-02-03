@@ -44,7 +44,6 @@ def test_fat32(fat32):
 
 
 def verify_fs_content(fs, volume_label):
-
     entries_map = {e.name: e for e in fs.root.iterdir()}
 
     assert set(entries_map.keys()) == {volume_label, "file1.txt", "file2.txt", "subdir1"}
