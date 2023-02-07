@@ -13,7 +13,6 @@ from dissect.fat.exceptions import (
 from dissect.fat.exfat import ExFAT
 from dissect.fat.fat import FATFS
 
-
 __all__ = [
     "ExFAT",
     "FATFS",

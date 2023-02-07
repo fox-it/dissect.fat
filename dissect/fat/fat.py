@@ -3,35 +3,35 @@
 # - https://github.com/nathanhi/pyfatfs
 # - https://download.microsoft.com/download/1/6/1/161ba512-40e2-4cc9-843a-923143f3456c/fatgen103.doc
 
-import struct
 import datetime
+import struct
+from functools import lru_cache, reduce
 from operator import itemgetter
-from functools import reduce, lru_cache
 
 from dissect.util.stream import RangeStream, RunlistStream
 from dissect.util.ts import dostimestamp
 
 from dissect.fat.c_fat import (
-    c_fat,
-    Fattype,
-    FAT12_EOC,
     BAD_CLUSTER,
+    DATA_CLUSTER_MAX,
+    DATA_CLUSTER_MIN,
+    END_OF_CLUSTER_MAX,
+    END_OF_CLUSTER_MIN,
+    FAT12_EOC,
     FREE_CLUSTER,
     VALID_BPB_MEDIA,
-    DATA_CLUSTER_MIN,
-    DATA_CLUSTER_MAX,
-    END_OF_CLUSTER_MIN,
-    END_OF_CLUSTER_MAX,
+    Fattype,
+    c_fat,
 )
 from dissect.fat.exceptions import (
-    InvalidBPB,
     BadClusterError,
-    FreeClusterError,
-    FileNotFoundError,
-    InvalidDirectoryError,
-    NotADirectoryError,
     EmptyDirectoryError,
+    FileNotFoundError,
+    FreeClusterError,
+    InvalidBPB,
+    InvalidDirectoryError,
     LastEmptyDirectoryError,
+    NotADirectoryError,
 )
 
 

@@ -1,14 +1,13 @@
-import os
 import logging
+import os
 import struct
+from collections import OrderedDict
 from itertools import groupby
 from operator import itemgetter
-from collections import OrderedDict
 
 from dissect.util.stream import RangeStream, RunlistStream
 
 from dissect.fat.c_exfat import (
-    c_exfat,
     BITMAP_ENTRY,
     DIR_ENTRY_SIZE,
     EOC,
@@ -17,6 +16,7 @@ from dissect.fat.c_exfat import (
     NO_VOLUME_LABEL_ENTRY,
     UPCASE_TABLE_ENTRY,
     VOLUME_LABEL_ENTRY,
+    c_exfat,
 )
 from dissect.fat.exceptions import InvalidHeaderMagic
 
