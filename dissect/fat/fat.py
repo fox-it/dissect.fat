@@ -91,7 +91,9 @@ class FATFS:
     def get(self, path, dirent=None):
         dirent = self.root if not dirent else dirent
 
-        parts = path.replace("\\", "/").split("/")
+        # Programmatically we will often use the `/` separator, so replace it with the native path separator of FAT
+        # `/` is an illegal character in FAT filenames, so it's safe to replace
+        parts = path.replace("/", "\\").split("\\")
         for part in parts:
             if not part:
                 continue
