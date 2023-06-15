@@ -84,7 +84,10 @@ class FATFS:
         self.volume_label = bytes(self.bpb_ext.BS_VolLab).strip(b"\x20").decode(encoding)
 
         # volume serial number, hex encoded
-        self.volume_id = f"{self.bpb_ext.BS_VolID:x}"
+        volume_id = f"{self.bpb_ext.BS_VolID:X}"
+        # The uuid of fat filesystems is expected to be in the format '%02X%02X-%02X%02X'
+        # See PR #16
+        self.volume_id = volume_id[:4] + "-" + volume_id[4:]
 
         self.root = RootDirectory(self)
 
