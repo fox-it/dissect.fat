@@ -9,7 +9,7 @@ def test_fat12(fat12):
     assert fs.fat.bits_per_entry == 12
 
     assert fs.volume_label == volume_label
-    assert fs.volume_id == "e038bb7c"
+    assert fs.volume_id == "E038-BB7C"
     assert fs.cluster_size == 512
 
     verify_fs_content(fs, volume_label)
@@ -23,7 +23,7 @@ def test_fat16(fat16):
     assert fs.fat.bits_per_entry == 16
 
     assert fs.volume_label == volume_label
-    assert fs.volume_id == "88fa453f"
+    assert fs.volume_id == "88FA-453F"
     assert fs.cluster_size == 512
 
     verify_fs_content(fs, volume_label)
@@ -37,7 +37,7 @@ def test_fat32(fat32):
     assert fs.fat.bits_per_entry == 32
 
     assert fs.volume_label == volume_label
-    assert fs.volume_id == "4368dbb7"
+    assert fs.volume_id == "4368-DBB7"
     assert fs.cluster_size == 512
 
     verify_fs_content(fs, volume_label)
