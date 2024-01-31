@@ -40,6 +40,7 @@ class FATFS:
         self.fh = fh
         self.encoding = encoding
 
+        fh.seek(0)
         sector = fh.read(512)
         bpb_size = len(c_fat.Bpb)
         self.bpb = c_fat.Bpb(sector[:bpb_size])
