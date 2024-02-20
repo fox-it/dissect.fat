@@ -149,8 +149,6 @@ class FAT:
     def __init__(self, fh, fattype):
         self.fh = fh
 
-        self.get = lru_cache(4096)(self.get)
-
         if fattype == Fattype.FAT12:
             self.bits_per_entry = 12
         elif fattype == Fattype.FAT16:
@@ -161,6 +159,8 @@ class FAT:
             raise TypeError("Unsupported FAT type")
 
         self.entry_count = int(self.fh.size // (self.bits_per_entry / 8))
+
+        self.get = lru_cache(4096)(self.get)
 
     def get(self, cluster):
         if cluster >= self.entry_count:
