@@ -149,6 +149,8 @@ class FAT:
     def __init__(self, fh, fattype):
         self.fh = fh
 
+        self.get = lru_cache(4096)(self.get)
+
         if fattype == Fattype.FAT12:
             self.bits_per_entry = 12
         elif fattype == Fattype.FAT16:
@@ -160,7 +162,6 @@ class FAT:
 
         self.entry_count = int(self.fh.size // (self.bits_per_entry / 8))
 
-    @lru_cache(4096)
     def get(self, cluster):
         if cluster >= self.entry_count:
             raise ValueError(f"Cluster exceeds FAT entry count: {cluster} >= {self.entry_count}")
