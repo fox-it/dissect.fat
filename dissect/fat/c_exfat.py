@@ -1,6 +1,6 @@
-from dissect import cstruct
+from dissect.cstruct import cstruct
 
-c_exfat_def = """
+exfat_def = """
 enum entry_types : uint8 {
     allocation_bitmap   = 0x81,
     upcase_table        = 0x82,
@@ -139,8 +139,7 @@ typedef struct UPCASE_DIRECTORY_ENTRY {
 """
 
 # default endianess is LE so we keep it that way.
-c_exfat = cstruct.cstruct()
-c_exfat.load(c_exfat_def)
+c_exfat = cstruct().load(exfat_def)
 
 EOC = 0xFFFFFFFF  # indicates end of cluster chain
 FID = 0xFFFFFFF8  # indicates start of FAT

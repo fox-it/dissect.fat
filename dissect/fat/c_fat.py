@@ -1,7 +1,7 @@
-from dissect import cstruct
+from dissect.cstruct import cstruct
 
 # https://ogris.de/fatrepair/fat.c
-c_fat_def = """
+fat_def = """
 #define ATTR_READ_ONLY 0x01
 #define ATTR_HIDDEN    0x02
 #define ATTR_SYSTEM    0x04
@@ -90,8 +90,7 @@ struct Ldirent {
 };
 """  # noqa: E501
 
-c_fat = cstruct.cstruct()
-c_fat.load(c_fat_def)
+c_fat = cstruct().load(fat_def)
 
 Fattype = c_fat.Fattype
 
