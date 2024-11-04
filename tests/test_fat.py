@@ -51,14 +51,20 @@ def verify_fs_content(fs, volume_label):
     file1 = entries_map["file1.txt"]
     assert not file1.is_directory()
     assert file1.size == 20
+    assert file1.nblocks == 1
+    assert file1.blksize == 512
 
     file2 = entries_map["file2.txt"]
     assert not file2.is_directory()
     assert file2.size == 23
+    assert file2.nblocks == 1
+    assert file2.blksize == 512
 
     subdir = entries_map["subdir1"]
     assert subdir.is_directory()
     assert subdir.size == 512
+    assert subdir.nblocks == 1
+    assert subdir.blksize == 512
 
     subdir_entries_map = {e.name: e for e in list(subdir.iterdir())}
 
@@ -67,3 +73,5 @@ def verify_fs_content(fs, volume_label):
     file3 = subdir_entries_map["file3.txt"]
     assert not file3.is_directory()
     assert file3.size == 27
+    assert file3.nblocks == 1
+    assert file3.blksize == 512

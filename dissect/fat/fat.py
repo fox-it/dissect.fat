@@ -5,7 +5,7 @@
 
 import datetime
 import struct
-from functools import lru_cache, reduce
+from functools import cached_property, lru_cache, reduce
 from operator import itemgetter
 
 from dissect.util.stream import RangeStream, RunlistStream
@@ -293,6 +293,14 @@ class DirectoryEntry:
     @property
     def path(self):
         return "\\".join([self.parent.path if self.parent else "", self.name]).lstrip("\\")
+
+    @cached_property
+    def nblocks(self) -> int:
+        return len(list(self.fs.fat.chain(self.cluster)))
+
+    @cached_property
+    def blksize(self) -> int:
+        return self.fs.cluster_size
 
     @property
     def size(self):
