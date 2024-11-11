@@ -298,10 +298,6 @@ class DirectoryEntry:
     def nblocks(self) -> int:
         return len(list(self.fs.fat.chain(self.cluster)))
 
-    @cached_property
-    def blksize(self) -> int:
-        return self.fs.cluster_size
-
     @property
     def size(self):
         if self.is_directory():
