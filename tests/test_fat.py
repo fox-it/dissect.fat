@@ -1,7 +1,9 @@
+from typing import BinaryIO
+
 from dissect.fat import fat
 
 
-def test_fat12(fat12):
+def test_fat12(fat12: BinaryIO) -> None:
     volume_label = "VOLLAB1"
 
     fs = fat.FATFS(fat12)
@@ -15,7 +17,7 @@ def test_fat12(fat12):
     verify_fs_content(fs, volume_label)
 
 
-def test_fat16(fat16):
+def test_fat16(fat16: BinaryIO) -> None:
     volume_label = "LABFAT16"
 
     fs = fat.FATFS(fat16)
@@ -29,7 +31,7 @@ def test_fat16(fat16):
     verify_fs_content(fs, volume_label)
 
 
-def test_fat32(fat32):
+def test_fat32(fat32: BinaryIO) -> None:
     volume_label = "LABFAT32"
 
     fs = fat.FATFS(fat32)
@@ -43,7 +45,7 @@ def test_fat32(fat32):
     verify_fs_content(fs, volume_label)
 
 
-def verify_fs_content(fs, volume_label):
+def verify_fs_content(fs: fat.FATFS, volume_label: str) -> None:
     entries_map = {e.name: e for e in fs.root.iterdir()}
 
     assert set(entries_map.keys()) == {volume_label, "file1.txt", "file2.txt", "subdir1"}
@@ -75,3 +77,24 @@ def verify_fs_content(fs, volume_label):
     assert file3.size == 27
     assert file3.nblocks == 1
     assert file3.blksize == 512
+
+
+def test_fat3_file_2_cluster(disk2: BinaryIO) -> None:
+    fs = fat.FATFS(disk2)
+    entries_map = {e.name: e for e in fs.root.iterdir()}
+
+    file1 = entries_map["rand.txt"]
+    assert not file1.is_directory()
+    assert file1.size == 1024
+    assert file1.nblocks == 2
+    assert file1.blksize == 512
+
+
+def test_fat3_file_blksize_1024(disk3: BinaryIO) -> None:
+    fs = fat.FATFS(disk3)
+    entries_map = {e.name: e for e in fs.root.iterdir()}
+    file1 = entries_map["rand.txt"]
+    assert not file1.is_directory()
+    assert file1.size == 1024
+    assert file1.nblocks == 1
+    assert file1.blksize == 1024

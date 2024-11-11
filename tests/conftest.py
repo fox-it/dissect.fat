@@ -33,3 +33,17 @@ def fat32():
     name = "data/fat32.bin"
     with open(absolute_path(name), "rb") as f:
         yield f
+
+
+@pytest.fixture
+def disk2():
+    name = "data/disk2.img"
+    with open(absolute_path(name), "rb") as f:
+        yield f
+
+
+@pytest.fixture
+def disk3():
+    name = "data/disk3.img"
+    with open(absolute_path(name), "rb") as f:
+        yield f
