@@ -86,34 +86,36 @@ class ExFAT:
 
     def runlist(self, starting_cluster, not_fragmented=True, size=None):
         """
-        Creates a RunlistStream compatible runlist from exFAT FAT structures
+        Creates a RunlistStream compatible runlist from exFAT FAT structures, in sectors.
 
         Args:
             starting_cluster (int): First cluster of file, folder or location in question
 
         Returns:
-            runlist: [(sector_offset, run_length)]"""
+            runlist: [(sector_offset, run_length_in_sectors)]"""
 
         # If file is not fragmented clusters will not be present in the FAT
         cluster_chain = [starting_cluster] if not_fragmented else self.get_cluster_chain(starting_cluster)
         runlist = []
+        sectors_per_cluster = 2**self.vbr.sectors_per_cluster_exp
 
         # TODO Graceful way to construct a runlist of non-fragmented streams spanning multiple sectors
         if size:
-            run = -(-size // self.cluster_size)
+            run = -(-size // self.cluster_size) * sectors_per_cluster
             runlist.append((self.cluster_to_sector(cluster_chain[0]), run))
         else:
             # This is a somewhat convoluted, but short way to group successive
             # clusters together.
             # As the cluster numbers in the cluster_chain are strictly
-            # incrementing, a succesive range of clusters will have the same
+            # incrementing, a successive range of clusters will have the same
             # delta with respect to their position in the cluster_chain, which
             # is different from any other successive range, which is what is
             # used in the groupby().
+            # Example: [(3, 1), (4, 1), (6, 1)] becomes [(3, 2), (6, 1)]
             for _, cluster_group in groupby(enumerate(cluster_chain), lambda i: i[0] - i[1]):
                 run = list(map(itemgetter(1), cluster_group))
                 start_cluster = run[0]
-                run_len = len(run)
+                run_len = len(run) * sectors_per_cluster
                 runlist.append((self.cluster_to_sector(start_cluster), run_len))
 
         return runlist
@@ -194,14 +196,14 @@ class RootDirectory:
         # Root dir is always present in FAT so we pass False to traverse the FAT table
         # thus root dir is per definition fragmented
         runlist = self.exfat.runlist(self.location, False)
-        size = 0
+        size = 0  # in bytes
 
         # Calculate size of rootdir from runlist since rootdir has no size attribute
         for run in runlist:
-            size += run[1] * self.exfat.cluster_size
+            size += run[1] * self.exfat.sector_size
 
         self.size = size
-        self.root_dir = RunlistStream(fh, runlist, self.size, self.exfat.cluster_size)
+        self.root_dir = RunlistStream(fh, runlist, self.size, self.exfat.sector_size)
         self.dict = self._create_root_dir(self.root_dir)
 
     def _parse_subdir(self, entry):
@@ -216,10 +218,10 @@ class RootDirectory:
         """
 
         folder_location = entry.stream.location
-        folder_size = entry.stream.data_length
+        folder_size = entry.stream.data_length  # in bytes
         folder_runlist = self.exfat.runlist(folder_location, not_fragmented=entry.stream.flags.not_fragmented)
 
-        fh = RunlistStream(self.exfat.filesystem, folder_runlist, folder_size, self.exfat.cluster_size)
+        fh = RunlistStream(self.exfat.filesystem, folder_runlist, folder_size, self.exfat.sector_size)
         return self._parse_file_entries(fh)
 
     @staticmethod
@@ -276,13 +278,17 @@ class RootDirectory:
 
                 file_ = c_exfat.FILE(metadata=metadata, stream=stream, fn_entries=fn_entries)
                 if file_.metadata.attributes.directory:
-                    # A directory will have its own file entry as it's first element
-                    # and a ordered dict of file entry contained in it which can be accessed by their corresponding keys
+                    # A directory will have its own file entry as its first element and an ordered dict
+                    # of file entry contained in it which can be accessed by their corresponding keys
                     filename = self._construct_filename(file_.fn_entries)
                     entries[filename] = (file_, self._parse_subdir(file_))
                 else:
                     filename = self._construct_filename(file_.fn_entries)
                     entries[filename] = (file_, None)
+            elif entry.entry_type == 0x00:
+                # We could break early on entry_type==0x00 (end-of-directory)
+                # since all following entries are expected to be 0x00 as well.
+                pass
             else:
                 self._non_file_entries(entry)
 
