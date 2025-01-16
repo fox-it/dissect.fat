@@ -79,7 +79,7 @@ typedef struct STREAM_DIRECTORY_ENTRY {
     uint64 valid_data_length;          // 0x08 allocated size of data in bytes only counts for files and is used for
                                        // pre-allocation zero if directory
     uint8 reserved_2[4];               // 0x10 no clue always zero
-    uint32 location;                   // 0x15 starting cluster of data
+    uint32 location;                   // 0x14 starting cluster of data
     uint64 data_length;                // 0x18 actual size of data if directory always multiples of sector size
 };
 

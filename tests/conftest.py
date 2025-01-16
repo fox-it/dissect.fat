@@ -15,6 +15,13 @@ def exfat_simple():
 
 
 @pytest.fixture
+def exfat_4m():
+    name = "data/exfat4m.bin"
+    with open(absolute_path(name), "rb") as f:
+        yield f
+
+
+@pytest.fixture
 def fat12():
     name = "data/fat12.bin"
     with open(absolute_path(name), "rb") as f:

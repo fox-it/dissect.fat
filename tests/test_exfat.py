@@ -39,3 +39,36 @@ def test_exfat(exfat_simple):
     assert sysvol.metadata.attributes.directory == 1
     assert sysvol.stream.flags.not_fragmented == 1
     assert sysvol.stream.data_length == 512
+
+
+def test_exfat_4m(exfat_4m):
+    e = exfat.ExFAT(exfat_4m)
+
+    assert e.volume_label == ""
+    assert e.cluster_count == 512
+    assert e.sector_size == 512
+    assert e.cluster_size == 4096
+    assert e.fat_sector == 2048
+    assert e.root_dir_cluster == 5
+    assert e.root_dir_sector == 4120
+    assert e.runlist(e.root_dir_cluster) == [(e.root_dir_sector, 8)]
+
+    files = e.files
+    assert sorted(files.keys()) == ["/"]
+
+    root = files["/"][0]
+    assert root.metadata.attributes.directory == 1
+    assert root.stream.flags.not_fragmented == 0
+    assert root.stream.data_length == 4096
+
+    empty_file = files["/"][1]["file.txt"][0]
+    assert empty_file.metadata.attributes.directory == 0
+    assert empty_file.stream.flags.not_fragmented == 0
+    assert empty_file.stream.data_length == 0
+
+    subdir = files["/"][1]["subdir"][0]
+    assert subdir.metadata.attributes.directory == 1
+    assert subdir.stream.flags.not_fragmented == 1
+    assert subdir.stream.data_length == 4096
+
+    assert sorted(files["/"][1]["subdir"][1].keys()) == ["sub.txt"]
