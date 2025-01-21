@@ -1,7 +1,11 @@
+from __future__ import annotations
+
+from typing import BinaryIO
+
 from dissect.fat import exfat
 
 
-def test_exfat(exfat_simple):
+def test_exfat(exfat_simple: BinaryIO) -> None:
     e = exfat.ExFAT(exfat_simple)
 
     assert e.volume_label == "THESIS"
@@ -41,7 +45,7 @@ def test_exfat(exfat_simple):
     assert sysvol.stream.data_length == 512
 
 
-def test_exfat_4m(exfat_4m):
+def test_exfat_4m(exfat_4m: BinaryIO) -> None:
     e = exfat.ExFAT(exfat_4m)
 
     assert e.volume_label == ""

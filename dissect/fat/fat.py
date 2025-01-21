@@ -2,11 +2,13 @@
 # - https://ogris.de/fatrepair/fat.c
 # - https://github.com/nathanhi/pyfatfs
 # - https://download.microsoft.com/download/1/6/1/161ba512-40e2-4cc9-843a-923143f3456c/fatgen103.doc
+from __future__ import annotations
 
 import datetime
 import struct
 from functools import lru_cache, reduce
 from operator import itemgetter
+from typing import TYPE_CHECKING, BinaryIO
 
 from dissect.util.stream import RangeStream, RunlistStream
 from dissect.util.ts import dostimestamp
@@ -34,9 +36,12 @@ from dissect.fat.exceptions import (
     NotADirectoryError,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
 
 class FATFS:
-    def __init__(self, fh, encoding="ibm437"):
+    def __init__(self, fh: BinaryIO, encoding: str = "ibm437"):
         self.fh = fh
         self.encoding = encoding
 
@@ -89,8 +94,8 @@ class FATFS:
 
         self.root = RootDirectory(self)
 
-    def get(self, path, dirent=None):
-        dirent = self.root if not dirent else dirent
+    def get(self, path: str, dirent: DirectoryEntry | RootDirectory | None = None) -> DirectoryEntry | RootDirectory:
+        dirent = dirent if dirent else self.root
 
         # Programmatically we will often use the `/` separator, so replace it with the native path separator of FAT
         # `/` is an illegal character in FAT filenames, so it's safe to replace
@@ -113,7 +118,7 @@ class FATFS:
         return dirent
 
 
-def validate_bpb(bpb):
+def validate_bpb(bpb: c_fat.Bpb | bytes) -> None:
     if isinstance(bpb, bytes):
         bpb = c_fat.Bpb(bpb[: len(c_fat.Bpb)])
 
@@ -146,7 +151,7 @@ def validate_bpb(bpb):
 
 
 class FAT:
-    def __init__(self, fh, fattype):
+    def __init__(self, fh: BinaryIO, fattype: Fattype):
         self.fh = fh
 
         if fattype == Fattype.FAT12:
@@ -162,7 +167,7 @@ class FAT:
 
         self.get = lru_cache(4096)(self.get)
 
-    def get(self, cluster):
+    def get(self, cluster: int) -> int | None:
         if cluster >= self.entry_count:
             raise ValueError(f"Cluster exceeds FAT entry count: {cluster} >= {self.entry_count}")
 
@@ -171,20 +176,21 @@ class FAT:
             self.fh.seek(offset_in_fat)
             value = struct.unpack("<H", self.fh.read(2))[0]
 
-            if cluster & 1:
-                return value >> 4
-            else:
-                return value & 0x0FFF
-        elif self.bits_per_entry == 16:
+            return value >> 4 if cluster & 1 else value & 0x0FFF
+
+        if self.bits_per_entry == 16:
             offset_in_fat = cluster * 2
             self.fh.seek(offset_in_fat)
             return struct.unpack("<H", self.fh.read(2))[0]
-        elif self.bits_per_entry == 32:
+
+        if self.bits_per_entry == 32:
             offset_in_fat = cluster * 4
             self.fh.seek(offset_in_fat)
             return struct.unpack("<I", self.fh.read(4))[0] & 0x0FFFFFFF  # FAT32 clusters are 28 bits
 
-    def chain(self, cluster):
+        raise ValueError("Unsupported FAT type")
+
+    def chain(self, cluster: int) -> Iterator[int]:
         bits = self.bits_per_entry
         while True:
             value = self.get(cluster)
@@ -209,7 +215,7 @@ class FAT:
 
             cluster = value
 
-    def runlist(self, cluster):
+    def runlist(self, cluster: int) -> Iterator[tuple[int, int]]:
         """Create a runlist from a cluster chain.
 
         First two clusters are reserved, so substract those.
@@ -232,7 +238,7 @@ class FAT:
 
 
 class DirectoryEntry:
-    def __init__(self, fs, fh, parent=None):
+    def __init__(self, fs: FATFS, fh: BinaryIO, parent: DirectoryEntry | RootDirectory | None = None):
         self.fs = fs
         self.parent = parent
 
@@ -267,7 +273,7 @@ class DirectoryEntry:
             self.dirent = c_fat.Dirent(buf)
 
             self.ldirents.sort(key=lambda e: e.LDIR_Ord & 0x3F)
-            name_map = map(lambda e: e.LDIR_Name1 + e.LDIR_Name2 + e.LDIR_Name3, self.ldirents)
+            name_map = (e.LDIR_Name1 + e.LDIR_Name2 + e.LDIR_Name3 for e in self.ldirents)
             name_reduce = bytes(reduce(lambda a, b: a + b, name_map))
             self.name = c_fat.wchar[None](name_reduce + b"\x00\x00")
         else:
@@ -280,69 +286,68 @@ class DirectoryEntry:
         base = dir_name[:8].decode(self.fs.encoding).rstrip("\x00").rstrip()
         ext = dir_name[8:].decode(self.fs.encoding).rstrip("\x00").rstrip()
 
-        self.short_name = ".".join([base, ext]) if ext else base
+        self.short_name = f"{base}.{ext}" if ext else base
         if not self.name:
             self.name = self.short_name
 
         self._runlist = None
         self._entries = None
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<DirectoryEntry name={self.name}>"
 
     @property
-    def path(self):
+    def path(self) -> str:
         return "\\".join([self.parent.path if self.parent else "", self.name]).lstrip("\\")
 
     @property
-    def size(self):
+    def size(self) -> size:
         if self.is_directory():
             return sum(map(itemgetter(1), self.dataruns())) * self.fs.cluster_size
-        else:
-            return self.dirent.DIR_FileSize
+        return self.dirent.DIR_FileSize
 
     @property
-    def cluster(self):
+    def cluster(self) -> int:
         return (self.dirent.DIR_FstClusHI << 16) | self.dirent.DIR_FstClusLO
 
     @property
-    def ctime(self):
+    def ctime(self) -> datetime.datetime:
         if self.dirent.DIR_CrtDate and self.dirent.DIR_CrtTime:
             return dostimestamp(
                 (self.dirent.DIR_CrtDate << 16) | self.dirent.DIR_CrtTime,
                 self.dirent.DIR_CrtTimeTenth,
             )
-        return datetime.datetime(1980, 1, 1)
+        return datetime.datetime(1980, 1, 1)  # noqa: DTZ001
 
     @property
-    def atime(self):
+    def atime(self) -> datetime.datetime:
         if self.dirent.DIR_LstAccDate:
             return dostimestamp(self.dirent.DIR_LstAccDate << 16)
-        return datetime.datetime(1980, 1, 1)
+        return datetime.datetime(1980, 1, 1)  # noqa: DTZ001
 
     @property
-    def mtime(self):
+    def mtime(self) -> datetime.datetime:
         return dostimestamp((self.dirent.DIR_WrtDate << 16) | self.dirent.DIR_WrtTime)
 
-    def is_readonly(self):
+    def is_readonly(self) -> bool:
         return bool(self.dirent.DIR_Attr & c_fat.ATTR_READ_ONLY)
 
-    def is_hidden(self):
+    def is_hidden(self) -> bool:
         return bool(self.dirent.DIR_Attr & c_fat.ATTR_HIDDEN)
 
-    def is_system(self):
+    def is_system(self) -> bool:
         return bool(self.dirent.DIR_Attr & c_fat.ATTR_SYSTEM)
 
-    def is_volume_id(self):
+    def is_volume_id(self) -> bool:
         return bool(self.dirent.DIR_Attr & c_fat.ATTR_VOLUME_ID)
 
-    def is_directory(self):
+    def is_directory(self) -> bool:
         return bool(self.dirent.DIR_Attr & c_fat.ATTR_DIRECTORY)
 
-    def is_archive(self):
+    def is_archive(self) -> bool:
         return bool(self.dirent.DIR_Attr & c_fat.ATTR_ARCHIVE)
 
-    def iterdir(self):
+    def iterdir(self) -> Iterator[DirectoryEntry]:
         if not self.is_directory():
             raise NotADirectoryError(self.name)
 
@@ -356,17 +361,17 @@ class DirectoryEntry:
         else:
             yield from self._entries
 
-    def dataruns(self):
+    def dataruns(self) -> list[tuple[int, int]]:
         if self._runlist is None:
             self._runlist = [] if self.cluster == FREE_CLUSTER else list(self.fs.fat.runlist(self.cluster))
         return self._runlist
 
-    def open(self):
+    def open(self) -> RunlistStream:
         return RunlistStream(self.fs.data_stream, self.dataruns(), self.size, self.fs.cluster_size)
 
 
 class RootDirectory(DirectoryEntry):
-    def __init__(self, fs):
+    def __init__(self, fs: FATFS):
         self.fs = fs
         self.name = "\\"
         self.short_name = self.name
@@ -375,53 +380,52 @@ class RootDirectory(DirectoryEntry):
         self._entries = None
 
     @property
-    def path(self):
+    def path(self) -> str:
         return ""
 
     @property
-    def size(self):
+    def size(self) -> int:
         if self.fs.type in (Fattype.FAT12, Fattype.FAT16):
             return self.fs.bpb.BPB_RootEntCnt * 32
-        else:
-            return sum(map(itemgetter(1), self.dataruns())) * self.fs.cluster_size
+        return sum(map(itemgetter(1), self.dataruns())) * self.fs.cluster_size
 
     @property
-    def cluster(self):
+    def cluster(self) -> int | None:
         if self.fs.type == Fattype.FAT32:
             return self.fs.bpb_ext.BPB_RootClus
         return None
 
     @property
-    def ctime(self):
-        return datetime.datetime(1980, 1, 1)
+    def ctime(self) -> datetime.datetime:
+        return datetime.datetime(1980, 1, 1)  # noqa: DTZ001
 
     @property
-    def atime(self):
-        return datetime.datetime(1980, 1, 1)
+    def atime(self) -> datetime.datetime:
+        return datetime.datetime(1980, 1, 1)  # noqa: DTZ001
 
     @property
-    def mtime(self):
-        return datetime.datetime(1980, 1, 1)
+    def mtime(self) -> datetime.datetime:
+        return datetime.datetime(1980, 1, 1)  # noqa: DTZ001
 
-    def is_readonly(self):
+    def is_readonly(self) -> bool:
         return False
 
-    def is_hidden(self):
+    def is_hidden(self) -> bool:
         return False
 
-    def is_system(self):
+    def is_system(self) -> bool:
         return False
 
-    def is_volume_id(self):
+    def is_volume_id(self) -> bool:
         return False
 
-    def is_directory(self):
+    def is_directory(self) -> bool:
         return True
 
-    def is_archive(self):
+    def is_archive(self) -> bool:
         return False
 
-    def iterdir(self):
+    def iterdir(self) -> Iterator[DirectoryEntry]:
         if not self._entries:
             entries = []
             for entry in _iter_dirent(self.fs, self.open(), self):
@@ -432,29 +436,30 @@ class RootDirectory(DirectoryEntry):
         else:
             yield from self._entries
 
-    def dataruns(self):
+    def dataruns(self) -> list[tuple[int, int]]:
         if self._runlist is None:
             self._runlist = [] if self.cluster == FREE_CLUSTER else list(self.fs.fat.runlist(self.cluster))
         return self._runlist
 
-    def open(self):
+    def open(self) -> RangeStream | RunlistStream:
         if self.fs.type in (Fattype.FAT12, Fattype.FAT16):
             root_dir_sector = self.fs.bpb.BPB_RsvdSecCnt + (self.fs.fat_size * self.fs.bpb.BPB_NumFATs)
             offset = root_dir_sector * self.fs.sector_size
             return RangeStream(self.fs.fh, offset, self.size)
-        else:
-            return RunlistStream(self.fs.data_stream, self.dataruns(), self.size, self.fs.cluster_size)
+        return RunlistStream(self.fs.data_stream, self.dataruns(), self.size, self.fs.cluster_size)
 
 
-def mask(v, bits):
+def mask(v: int, bits: int) -> int:
     return v & ((1 << bits) - 1)
 
 
-def _iter_dirent(fs, fh, parent=None):
+def _iter_dirent(
+    fs: FATFS, fh: BinaryIO, parent: DirectoryEntry | RootDirectory | None = None
+) -> Iterator[DirectoryEntry]:
     while True:
         try:
             yield DirectoryEntry(fs, fh, parent)
-        except EmptyDirectoryError:
+        except EmptyDirectoryError:  # noqa: PERF203
             continue
         except LastEmptyDirectoryError:
             break
