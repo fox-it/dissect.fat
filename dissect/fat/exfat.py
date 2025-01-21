@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 import logging
 import os
 import struct
 from collections import OrderedDict
 from itertools import groupby
 from operator import itemgetter
+from typing import BinaryIO
 
 from dissect.util.stream import RangeStream, RunlistStream
 
@@ -27,7 +30,7 @@ log.setLevel(os.getenv("DISSECT_LOG_EXFAT", "CRITICAL"))
 
 
 class ExFAT:
-    def __init__(self, fh):
+    def __init__(self, fh: BinaryIO):
         self.filesystem = fh
         fh.seek(0)
 
@@ -56,7 +59,7 @@ class ExFAT:
         self.upcase_table = self.root_directory.upcase_entry
         self.volume_label = self.root_directory.volume_entry.volume_label.strip("\x00")
 
-    def cluster_to_sector(self, cluster):
+    def cluster_to_sector(self, cluster: int) -> int | None:
         """
         Returns the clusters' corresponding sector address
 
@@ -70,7 +73,7 @@ class ExFAT:
         sector = ((cluster - 2) * (2**self.vbr.sectors_per_cluster_exp)) + self.cluster_heap_sector
         return sector if sector > 0 else None
 
-    def sector_to_cluster(self, sector):
+    def sector_to_cluster(self, sector: int) -> int | None:
         """
         Returns the sectors' corresponding cluster address
 
@@ -84,7 +87,9 @@ class ExFAT:
         cluster = ((sector - self.cluster_to_sector(2)) // self.sector_size) + 2
         return cluster if cluster >= 2 else None
 
-    def runlist(self, starting_cluster, not_fragmented=True, size=None):
+    def runlist(
+        self, starting_cluster: int, not_fragmented: bool = True, size: int | None = None
+    ) -> list[tuple[int, int]]:
         """
         Creates a RunlistStream compatible runlist from exFAT FAT structures, in sectors.
 
@@ -120,7 +125,7 @@ class ExFAT:
 
         return runlist
 
-    def get_cluster_chain(self, starting_cluster):
+    def get_cluster_chain(self, starting_cluster: int) -> list[int]:
         """
         Reads the on disk FAT to construct the cluster chain
 
@@ -136,17 +141,17 @@ class ExFAT:
 
         if starting_cluster < 2:
             return chain
-        else:
-            while next_ != EOC:
-                self.fat.seek(starting_cluster * FAT_ENTRY_SIZE)
-                next_ = struct.unpack("<L", self.fat.read(FAT_ENTRY_SIZE))[0]
-                chain.append(starting_cluster)
-                starting_cluster = next_
 
-            return chain
+        while next_ != EOC:
+            self.fat.seek(starting_cluster * FAT_ENTRY_SIZE)
+            next_ = struct.unpack("<L", self.fat.read(FAT_ENTRY_SIZE))[0]
+            chain.append(starting_cluster)
+            starting_cluster = next_
+
+        return chain
 
     @staticmethod
-    def _utc_timezone(timezone):
+    def _utc_timezone(timezone: int) -> dict[str, str | int]:
         """
         Converts a Microsoft exFAT timezone byte to its UTC timezone equivalent
 
@@ -173,12 +178,12 @@ class ExFAT:
             utc_name = f"UTC{hours:+03}:{minutes:02}"
 
             return {"name": utc_name, "offset": utc_minute_offset}
-        else:
-            return {"name": "localtime", "offset": 0}
+
+        return {"name": "localtime", "offset": 0}
 
 
 class RootDirectory:
-    def __init__(self, fh, location, exfat):
+    def __init__(self, fh: BinaryIO, location: int, exfat: ExFAT):
         self.exfat = exfat
         self.location = location
         self.size = 0
@@ -189,7 +194,7 @@ class RootDirectory:
         self.dict = OrderedDict()
         self._parse_root_dir(fh)
 
-    def _parse_root_dir(self, fh):
+    def _parse_root_dir(self, fh: BinaryIO) -> None:
         """
         Parses the passed fh to construct the Root directory object"""
 
@@ -206,7 +211,7 @@ class RootDirectory:
         self.root_dir = RunlistStream(fh, runlist, self.size, self.exfat.sector_size)
         self.dict = self._create_root_dir(self.root_dir)
 
-    def _parse_subdir(self, entry):
+    def _parse_subdir(self, entry: c_exfat.FILE) -> OrderedDict:
         """
         Parses the given sub directory file directory entry for containing files
 
@@ -225,7 +230,7 @@ class RootDirectory:
         return self._parse_file_entries(fh)
 
     @staticmethod
-    def _construct_filename(fn_entries, is_dir=False):
+    def _construct_filename(fn_entries: list[c_exfat.FILENAME_DIRECTORY_ENTRY], is_dir: bool = False) -> str:
         """
         Assembles the filename from given file name directory entries
 
@@ -247,7 +252,7 @@ class RootDirectory:
 
         return filename if not is_dir else filename + "/"
 
-    def _parse_file_entries(self, fh):
+    def _parse_file_entries(self, fh: BinaryIO) -> OrderedDict:
         """
         Finds and parses file entries in a given file handle (file like object)
 
@@ -271,10 +276,7 @@ class RootDirectory:
                 fnentry_count = metadata.subentry_count - 1
 
                 stream = c_exfat.STREAM_DIRECTORY_ENTRY(fh.read(DIR_ENTRY_SIZE))
-                fn_entries = []
-
-                for _ in range(fnentry_count):
-                    fn_entries.append(c_exfat.FILENAME_DIRECTORY_ENTRY(fh.read(DIR_ENTRY_SIZE)))
+                fn_entries = [c_exfat.FILENAME_DIRECTORY_ENTRY(fh.read(DIR_ENTRY_SIZE)) for _ in range(fnentry_count)]
 
                 file_ = c_exfat.FILE(metadata=metadata, stream=stream, fn_entries=fn_entries)
                 if file_.metadata.attributes.directory:
@@ -294,7 +296,7 @@ class RootDirectory:
 
         return entries
 
-    def _non_file_entries(self, entry):
+    def _non_file_entries(self, entry: c_exfat.FILE_DIRECTORY_ENTRY) -> None:
         if entry.entry_type == VOLUME_LABEL_ENTRY or entry.entry_type == NO_VOLUME_LABEL_ENTRY:
             self.volume_entry = c_exfat.VOLUME_DIRECTORY_ENTRY(entry.dumps())
         elif entry.entry_type == BITMAP_ENTRY:
@@ -302,7 +304,7 @@ class RootDirectory:
         elif entry.entry_type == UPCASE_TABLE_ENTRY:
             self.upcase_entry = c_exfat.UPCASE_DIRECTORY_ENTRY(entry.dumps())
 
-    def _create_root_dir(self, root_dir):
+    def _create_root_dir(self, root_dir: BinaryIO) -> OrderedDict:
         """
         Since exFAT does not have a dedicated root directory entry
         one has to be constructed form available parameters during filesystem parsing.

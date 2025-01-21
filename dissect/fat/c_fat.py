@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dissect.cstruct import cstruct
 
 # https://ogris.de/fatrepair/fat.c

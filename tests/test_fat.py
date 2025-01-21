@@ -1,7 +1,11 @@
+from __future__ import annotations
+
+from typing import BinaryIO
+
 from dissect.fat import fat
 
 
-def test_fat12(fat12):
+def test_fat12(fat12: BinaryIO) -> None:
     volume_label = "VOLLAB1"
 
     fs = fat.FATFS(fat12)
@@ -15,7 +19,7 @@ def test_fat12(fat12):
     verify_fs_content(fs, volume_label)
 
 
-def test_fat16(fat16):
+def test_fat16(fat16: BinaryIO) -> None:
     volume_label = "LABFAT16"
 
     fs = fat.FATFS(fat16)
@@ -29,7 +33,7 @@ def test_fat16(fat16):
     verify_fs_content(fs, volume_label)
 
 
-def test_fat32(fat32):
+def test_fat32(fat32: BinaryIO) -> None:
     volume_label = "LABFAT32"
 
     fs = fat.FATFS(fat32)
@@ -43,7 +47,7 @@ def test_fat32(fat32):
     verify_fs_content(fs, volume_label)
 
 
-def verify_fs_content(fs, volume_label):
+def verify_fs_content(fs: fat.FATFS, volume_label: str) -> None:
     entries_map = {e.name: e for e in fs.root.iterdir()}
 
     assert set(entries_map.keys()) == {volume_label, "file1.txt", "file2.txt", "subdir1"}
