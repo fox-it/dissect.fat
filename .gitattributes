@@ -1,1 +1,1 @@
-tests/data/*.bin filter=lfs diff=lfs merge=lfs -text
+tests/_data/** filter=lfs diff=lfs merge=lfs -text

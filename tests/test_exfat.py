@@ -1,78 +1,108 @@
 from __future__ import annotations
 
+import datetime
 from typing import BinaryIO
 
-from dissect.fat import exfat
-
-
-def test_exfat(exfat_simple: BinaryIO) -> None:
-    e = exfat.ExFAT(exfat_simple)
-
-    assert e.volume_label == "THESIS"
-    assert e.cluster_count == 1792
-    assert e.sector_size == e.cluster_size
-    assert e.fat_sector == 128
-    assert e.root_dir_cluster == 15
-    assert e.root_dir_sector == 269
-    assert e.runlist(e.root_dir_cluster) == [(e.root_dir_sector, 1)]
-
-    files = e.files
-    assert sorted(files.keys()) == ["/"]
-
-    root = files["/"][0]
-    assert root.metadata.attributes.directory == 1
-    assert root.stream.flags.not_fragmented == 0
-    assert root.stream.data_length == 512
-
-    cat = files["/"][1]["cat.jpg"][0]
-    assert cat.metadata.attributes.directory == 0
-    assert cat.stream.flags.not_fragmented == 1
-    assert cat.stream.data_length == 88786
-
-    find_me = files["/"][1]["find_me.txt"][0]
-    assert find_me.metadata.attributes.directory == 0
-    assert find_me.stream.flags.not_fragmented == 1
-    assert find_me.stream.data_length == 9
-
-    directory = files["/"][1]["directory"][0]
-    assert directory.metadata.attributes.directory == 1
-    assert directory.stream.flags.not_fragmented == 1
-    assert directory.stream.data_length == 512
-
-    sysvol = files["/"][1]["System Volume Information"][0]
-    assert sysvol.metadata.attributes.directory == 1
-    assert sysvol.stream.flags.not_fragmented == 1
-    assert sysvol.stream.data_length == 512
+from dissect.fat import c_fat
+from dissect.fat.exfatfs import ExFATFS
 
 
 def test_exfat_4m(exfat_4m: BinaryIO) -> None:
-    e = exfat.ExFAT(exfat_4m)
+    volume_label = ""
 
-    assert e.volume_label == ""
-    assert e.cluster_count == 512
-    assert e.sector_size == 512
-    assert e.cluster_size == 4096
-    assert e.fat_sector == 2048
-    assert e.root_dir_cluster == 5
-    assert e.root_dir_sector == 4120
-    assert e.runlist(e.root_dir_cluster) == [(e.root_dir_sector, 8)]
+    fs = ExFATFS(exfat_4m)
 
-    files = e.files
-    assert sorted(files.keys()) == ["/"]
+    assert fs.type == c_fat.Fattype.EXFAT
+    assert fs.checksum == 0x89266CBE
 
-    root = files["/"][0]
-    assert root.metadata.attributes.directory == 1
-    assert root.stream.flags.not_fragmented == 0
-    assert root.stream.data_length == 4096
+    assert fs.volume_label == volume_label
+    assert fs.cluster_size == 4096
+    assert fs.bpb.clu_count == 512
+    assert fs.volume_id == 0xE79529BB
+    assert fs.root.name == "\\"
 
-    empty_file = files["/"][1]["file.txt"][0]
-    assert empty_file.metadata.attributes.directory == 0
-    assert empty_file.stream.flags.not_fragmented == 0
-    assert empty_file.stream.data_length == 0
+    root = fs.get("/")
+    dir_list = sorted(root.listdir())
+    assert dir_list == [
+        "$ALLOC_BITMAP",
+        "$UPCASE_TABLE",
+        "file.txt",
+        "subdir",
+    ]
+    assert dir_list == sorted(fs.root.listdir())
+    assert root.is_directory()
+    assert not root.in_fat
 
-    subdir = files["/"][1]["subdir"][0]
-    assert subdir.metadata.attributes.directory == 1
-    assert subdir.stream.flags.not_fragmented == 1
-    assert subdir.stream.data_length == 4096
+    dir = fs.get("subdir")
+    assert dir.is_directory()
+    assert not dir.in_fat
+    assert sorted(dir.listdir()) == ["sub.txt"]
 
-    assert sorted(files["/"][1]["subdir"][1].keys()) == ["sub.txt"]
+    file = fs.get("subdir/sub.txt")
+    assert not file.is_directory()
+    assert file.in_fat
+    assert file.size == 0
+    assert file.cluster == 0
+    assert len(file.open().read()) == file.size
+
+
+def test_exfat(exfat_simple: BinaryIO) -> None:
+    volume_label = "THESIS"
+
+    fs = ExFATFS(exfat_simple)
+
+    assert fs.type == c_fat.Fattype.EXFAT
+    assert fs.checksum == 0xF3AFC687
+
+    assert fs.volume_label == volume_label
+    assert fs.cluster_size == 512
+    assert fs.bpb.clu_count == 1792
+    assert fs.volume_id == 0x6859A296
+    assert fs.root.name == "\\"
+
+    root = fs.get("/")
+    dir_list = sorted(root.listdir())
+    assert dir_list == [
+        "$ALLOC_BITMAP",
+        "$UPCASE_TABLE",
+        "System Volume Information",
+        "cat.jpg",
+        "directory",
+        "find_me.txt",
+    ]
+    assert dir_list == sorted(fs.root.listdir())
+    assert root.is_directory()
+    assert not root.in_fat
+    assert root.mtime == datetime.datetime(1980, 1, 1, 0, 0)  # noqa: DTZ001
+    assert root.atime == datetime.datetime(1980, 1, 1, 0, 0)  # noqa: DTZ001
+    assert root.ctime == datetime.datetime(1980, 1, 1, 0, 0)  # noqa: DTZ001
+
+    dir = fs.get("directory")
+    assert dir.is_directory()
+    assert not dir.in_fat
+    assert sorted(dir.listdir()) == ["putty.exe"]
+    assert dir.mtime == datetime.datetime(
+        2019, 4, 17, 10, 32, 42, tzinfo=datetime.timezone(datetime.timedelta(seconds=7200))
+    )
+    assert dir.atime == datetime.datetime(
+        2019, 4, 17, 10, 56, 22, tzinfo=datetime.timezone(datetime.timedelta(seconds=7200))
+    )
+    assert dir.ctime == datetime.datetime(
+        2019, 4, 17, 10, 56, 23, 310000, tzinfo=datetime.timezone(datetime.timedelta(seconds=7200))
+    )
+
+    file = fs.get("directory/putty.exe")
+    assert not file.is_directory()
+    assert not file.in_fat
+    assert file.size == 454657
+    assert file.cluster == 195
+    assert file.mtime == datetime.datetime(
+        2019, 3, 21, 14, 52, tzinfo=datetime.timezone(datetime.timedelta(seconds=7200))
+    )
+    assert file.atime == datetime.datetime(
+        2019, 4, 17, 10, 56, 28, tzinfo=datetime.timezone(datetime.timedelta(seconds=7200))
+    )
+    assert file.ctime == datetime.datetime(
+        2019, 4, 17, 10, 56, 28, 130000, tzinfo=datetime.timezone(datetime.timedelta(seconds=7200))
+    )
+    assert len(file.open().read()) == file.size
