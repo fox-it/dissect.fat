@@ -18,6 +18,10 @@ class FreeClusterError(Error):
     pass
 
 
+class DeletedDirectoryError(Error):
+    pass
+
+
 class EmptyDirectoryError(Error):
     pass
 

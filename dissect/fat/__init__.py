@@ -1,5 +1,8 @@
+from dissect.fat.c_exfat import c_exfat
+from dissect.fat.c_fat import c_fat
 from dissect.fat.exceptions import (
     BadClusterError,
+    DeletedDirectoryError,
     EmptyDirectoryError,
     Error,
     FileNotFoundError,
@@ -10,15 +13,16 @@ from dissect.fat.exceptions import (
     LastEmptyDirectoryError,
     NotADirectoryError,
 )
-from dissect.fat.exfat import ExFAT
-from dissect.fat.fat import FATFS
+from dissect.fat.fat import FAT, FATFS, DirectoryEntry, RootDirectory, is_fatfs
 
 __all__ = [
+    "FAT",
     "FATFS",
     "BadClusterError",
+    "DeletedDirectoryError",
+    "DirectoryEntry",
     "EmptyDirectoryError",
     "Error",
-    "ExFAT",
     "FileNotFoundError",
     "FreeClusterError",
     "InvalidBPB",
@@ -26,4 +30,8 @@ __all__ = [
     "InvalidHeaderMagic",
     "LastEmptyDirectoryError",
     "NotADirectoryError",
+    "RootDirectory",
+    "c_exfat",
+    "c_fat",
+    "is_fatfs",
 ]
