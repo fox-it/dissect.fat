@@ -60,8 +60,7 @@ class ExFAT:
         self.volume_label = self.root_directory.volume_entry.volume_label.strip("\x00")
 
     def cluster_to_sector(self, cluster: int) -> int | None:
-        """
-        Returns the clusters' corresponding sector address
+        """Returns the clusters' corresponding sector address.
 
         Args:
             cluster (int): cluster address
@@ -69,13 +68,11 @@ class ExFAT:
         Returns:
             int: corresponding sector address if available
         """
-
         sector = ((cluster - 2) * (2**self.vbr.sectors_per_cluster_exp)) + self.cluster_heap_sector
         return sector if sector > 0 else None
 
     def sector_to_cluster(self, sector: int) -> int | None:
-        """
-        Returns the sectors' corresponding cluster address
+        """Returns the sectors' corresponding cluster address.
 
         Args:
             sector (int): sector address
@@ -83,22 +80,20 @@ class ExFAT:
         Returns:
             int: corresponding cluster address if available
         """
-
         cluster = ((sector - self.cluster_to_sector(2)) // self.sector_size) + 2
         return cluster if cluster >= 2 else None
 
     def runlist(
         self, starting_cluster: int, not_fragmented: bool = True, size: int | None = None
     ) -> list[tuple[int, int]]:
-        """
-        Creates a RunlistStream compatible runlist from exFAT FAT structures, in sectors.
+        """Creates a RunlistStream compatible runlist from exFAT FAT structures, in sectors.
 
         Args:
             starting_cluster (int): First cluster of file, folder or location in question
 
         Returns:
-            runlist: [(sector_offset, run_length_in_sectors)]"""
-
+            runlist: [(sector_offset, run_length_in_sectors)]
+        """
         # If file is not fragmented clusters will not be present in the FAT
         cluster_chain = [starting_cluster] if not_fragmented else self.get_cluster_chain(starting_cluster)
         runlist = []
@@ -126,8 +121,7 @@ class ExFAT:
         return runlist
 
     def get_cluster_chain(self, starting_cluster: int) -> list[int]:
-        """
-        Reads the on disk FAT to construct the cluster chain
+        """Reads the on disk FAT to construct the cluster chain.
 
         Args:
             starting_cluster (int): cluster to look-up the chain from
@@ -135,7 +129,6 @@ class ExFAT:
         Returns:
             list: Chain of clusters. Including starting_cluster
         """
-
         next_ = 0x00000000
         chain = []
 
@@ -152,8 +145,7 @@ class ExFAT:
 
     @staticmethod
     def _utc_timezone(timezone: int) -> dict[str, str | int]:
-        """
-        Converts a Microsoft exFAT timezone byte to its UTC timezone equivalent
+        """Converts a Microsoft exFAT timezone byte to its UTC timezone equivalent.
 
         Args:
             timezone (int): exFAT timezone byte
@@ -161,7 +153,6 @@ class ExFAT:
         Returns:
             dict: UTC name (str), UTC offset in minutes (int)
         """
-
         #    utc_bool -64 32 16 : 8 4 2 1
         #              ^ sign
         TIMEZONE_MINUTE_INCREMENT = 15
@@ -195,9 +186,7 @@ class RootDirectory:
         self._parse_root_dir(fh)
 
     def _parse_root_dir(self, fh: BinaryIO) -> None:
-        """
-        Parses the passed fh to construct the Root directory object"""
-
+        """Parses the passed fh to construct the Root directory object."""
         # Root dir is always present in FAT so we pass False to traverse the FAT table
         # thus root dir is per definition fragmented
         runlist = self.exfat.runlist(self.location, False)
@@ -212,8 +201,7 @@ class RootDirectory:
         self.dict = self._create_root_dir(self.root_dir)
 
     def _parse_subdir(self, entry: c_exfat.FILE) -> OrderedDict:
-        """
-        Parses the given sub directory file directory entry for containing files
+        """Parses the given sub directory file directory entry for containing files.
 
         Args:
             entry (FILE): Directory FILE entry
@@ -221,7 +209,6 @@ class RootDirectory:
         Returns:
             OrderedDict: Containing files in sub directory
         """
-
         folder_location = entry.stream.location
         folder_size = entry.stream.data_length  # in bytes
         folder_runlist = self.exfat.runlist(folder_location, not_fragmented=entry.stream.flags.not_fragmented)
@@ -231,8 +218,7 @@ class RootDirectory:
 
     @staticmethod
     def _construct_filename(fn_entries: list[c_exfat.FILENAME_DIRECTORY_ENTRY], is_dir: bool = False) -> str:
-        """
-        Assembles the filename from given file name directory entries
+        """Assembles the filename from given file name directory entries.
 
         Args:
             fn_entries (list): A list of exFAT file name directory entries
@@ -240,7 +226,6 @@ class RootDirectory:
         Returns:
             str: Name of file or folder stripped from trailing null values
         """
-
         filename = []
         if len(fn_entries) == 1:
             filename = fn_entries[0].filename.strip("\x00")
@@ -253,8 +238,7 @@ class RootDirectory:
         return filename if not is_dir else filename + "/"
 
     def _parse_file_entries(self, fh: BinaryIO) -> OrderedDict:
-        """
-        Finds and parses file entries in a given file handle (file like object)
+        """Finds and parses file entries in a given file handle (file like object).
 
         Args:
             fh (Stream object): Any stream object
@@ -262,7 +246,6 @@ class RootDirectory:
         Returns:
             OrderedDict: Found and parsed file directory entries
         """
-
         entries = OrderedDict()
 
         while fh.tell() < fh.size:
@@ -305,13 +288,11 @@ class RootDirectory:
             self.upcase_entry = c_exfat.UPCASE_DIRECTORY_ENTRY(entry.dumps())
 
     def _create_root_dir(self, root_dir: BinaryIO) -> OrderedDict:
-        """
-        Since exFAT does not have a dedicated root directory entry
+        """Since exFAT does not have a dedicated root directory entry
         one has to be constructed form available parameters during filesystem parsing.
 
         This is ballpark so no real forensic conclusions should be based on the information of the root entry
         """
-
         metadata = c_exfat.FILE_DIRECTORY_ENTRY(
             entry_type=0x85, subentry_count=2, attributes=c_exfat.ATTRIBUTES(directory=0b1)
         )
