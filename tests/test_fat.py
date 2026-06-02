@@ -2,51 +2,38 @@ from __future__ import annotations
 
 from typing import BinaryIO
 
-from dissect.fat.fatfs import FATFS
+import pytest
+
+from dissect.fat.fat import FATFS
 
 
-def test_fat12(fat12: BinaryIO) -> None:
-    volume_label = "VOLLAB1"
-    fs = FATFS(fat12)
+@pytest.mark.parametrize(
+    ("name", "bits_per_entry", "volume_label", "volume_id", "cluster_size"),
+    [
+        ("fat12", 12, "VOLLAB1", "e038bb7c", 512),
+        ("fat16", 16, "LABFAT16", "88fa453f", 512),
+        ("fat32", 28, "LABFAT32", "4368dbb7", 512),
+    ],
+)
+def test_fat(
+    name: BinaryIO,
+    bits_per_entry: int,
+    volume_label: str,
+    volume_id: str,
+    cluster_size: int,
+    request: pytest.FixtureRequest,
+) -> None:
+    fs = FATFS(request.getfixturevalue(name))
 
-    assert fs.fat.bits_per_entry == 12
-
-    assert fs.volume_label == volume_label
-    assert fs.volume_id == "e038bb7c"
-    assert fs.cluster_size == 512
-
-    verify_fs_content(fs, volume_label)
-
-
-def test_fat16(fat16: BinaryIO) -> None:
-    volume_label = "LABFAT16"
-
-    fs = FATFS(fat16)
-
-    assert fs.fat.bits_per_entry == 16
-
-    assert fs.volume_label == volume_label
-    assert fs.volume_id == "88fa453f"
-    assert fs.cluster_size == 512
-
-    verify_fs_content(fs, volume_label)
-
-
-def test_fat32(fat32: BinaryIO) -> None:
-    volume_label = "LABFAT32"
-
-    fs = FATFS(fat32)
-
-    assert fs.fat.bits_per_entry == 32
+    assert fs.fat.bits_per_entry == bits_per_entry
 
     assert fs.volume_label == volume_label
-    assert fs.volume_id == "4368dbb7"
-    assert fs.cluster_size == 512
+    assert fs.volume_id == volume_id
+    assert fs.cluster_size == cluster_size
 
-    verify_fs_content(fs, volume_label)
+    assert fs.root.is_directory()
+    assert fs.root.name == ""
 
-
-def verify_fs_content(fs: FATFS, volume_label: str) -> None:
     entries_map = {e.name: e for e in fs.root.iterdir()}
 
     assert set(entries_map.keys()) == {volume_label, "file1.txt", "file2.txt", "subdir1"}

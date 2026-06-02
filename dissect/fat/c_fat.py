@@ -4,24 +4,16 @@ from dissect.cstruct import cstruct
 
 # https://ogris.de/fatrepair/fat.c
 fat_def = """
-#define ATTR_READ_ONLY 0x01
-#define ATTR_HIDDEN    0x02
-#define ATTR_SYSTEM    0x04
-#define ATTR_VOLUME_ID 0x08
-#define ATTR_DIRECTORY 0x10
-#define ATTR_ARCHIVE   0x20
-#define ATTR_LONG_NAME (ATTR_READ_ONLY | ATTR_HIDDEN | ATTR_SYSTEM | ATTR_VOLUME_ID)
-#define ATTR_LONG_NAME_MASK (ATTR_READ_ONLY | ATTR_HIDDEN | ATTR_SYSTEM | ATTR_VOLUME_ID | ATTR_DIRECTORY | ATTR_ARCHIVE)
+#define ATTR_READ_ONLY          0x01
+#define ATTR_HIDDEN             0x02
+#define ATTR_SYSTEM             0x04
+#define ATTR_VOLUME_ID          0x08
+#define ATTR_DIRECTORY          0x10
+#define ATTR_ARCHIVE            0x20
+#define ATTR_LONG_NAME          (ATTR_READ_ONLY | ATTR_HIDDEN | ATTR_SYSTEM | ATTR_VOLUME_ID)
+#define ATTR_LONG_NAME_MASK     (ATTR_READ_ONLY | ATTR_HIDDEN | ATTR_SYSTEM | ATTR_VOLUME_ID | ATTR_DIRECTORY | ATTR_ARCHIVE)
 
 #define LAST_LONG_ENTRY 0x40
-
-enum Fattype {
-    FATunknown,
-    FAT12,
-    FAT16,
-    FAT32,
-    EXFAT,
-};
 
 struct Bpb {
     uint8_t  BS_jmpBoot[3];    /* jump instruction to boot code */
@@ -95,15 +87,4 @@ struct Ldirent {
 
 c_fat = cstruct().load(fat_def)
 
-Fattype = c_fat.Fattype
-
 VALID_BPB_MEDIA = {0xF0, 0xF8, 0xF9, 0xFA, 0xFB, 0xFC, 0xFD, 0xFE, 0xFF}
-
-DATA_CLUSTER_MIN = 0x2
-DATA_CLUSTER_MAX = 0xFFFFFFFE
-END_OF_CLUSTER_MIN = 0xFFFFFFF8
-END_OF_CLUSTER_MAX = 0xFFFFFFFF
-
-FAT12_EOC = 0xFF0
-BAD_CLUSTER = 0xFFFFFFF7
-FREE_CLUSTER = 0x0

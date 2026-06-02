@@ -124,6 +124,7 @@ strict = true
 
 [tool.ruff.lint.per-file-ignores]
 "tests/_docs/**" = ["INP001"]
+"*.pyi" = ["E", "F", "PYI"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["dissect.fat"]
