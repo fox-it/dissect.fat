@@ -210,6 +210,10 @@ def iter_dirent(cls: type[T], fs: FS, fh: BinaryIO) -> Iterator[T]:
             break
 
 
+_H = struct.Struct("<H")
+_I = struct.Struct("<I")
+
+
 class FAT:
     """File Allocation Table (FAT) implementation.
 
@@ -247,23 +251,23 @@ class FAT:
         if self.bits_per_entry == 12:
             offset_in_fat = cluster + (cluster // 2)
             self.fh.seek(offset_in_fat)
-            value = struct.unpack("<H", self.fh.read(2))[0]
+            value = _H.unpack(self.fh.read(2))[0]
             return value >> 4 if cluster & 1 else value & 0x0FFF
 
         if self.bits_per_entry == 16:
             offset_in_fat = cluster * 2
             self.fh.seek(offset_in_fat)
-            return struct.unpack("<H", self.fh.read(2))[0]
+            return _H.unpack(self.fh.read(2))[0]
 
         if self.bits_per_entry == 28:
             offset_in_fat = cluster * 4
             self.fh.seek(offset_in_fat)
-            return struct.unpack("<I", self.fh.read(4))[0] & 0x0FFFFFFF
+            return _I.unpack(self.fh.read(4))[0] & 0x0FFFFFFF
 
         if self.bits_per_entry == 32:
             offset_in_fat = cluster * 4
             self.fh.seek(offset_in_fat)
-            return struct.unpack("<I", self.fh.read(4))[0]
+            return _I.unpack(self.fh.read(4))[0]
 
         raise ValueError("Unsupported FAT type")
 
