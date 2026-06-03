@@ -71,21 +71,19 @@ typedef struct _BOOT_SECTOR_EX {
 //
 
 typedef struct _DIRENT {
-    UCHAR          FileName[11];
-    UCHAR          Attributes;
-    UCHAR          NtByte;
-    UCHAR          CreationMSec;
-    USHORT         CreationTime;
-    USHORT         CreationDate;
-    USHORT         LastAccessDate;
+    UCHAR   FileName[11];
+    UCHAR   Attributes;
+    UCHAR   NtByte;
+    UCHAR   CreationMSec;
+    ULONG   CreationTime;
+    USHORT  LastAccessDate;
     union {
-        USHORT     ExtendedAttributes;
-        USHORT     FirstClusterOfFileHi;
+        USHORT  ExtendedAttributes;
+        USHORT  FirstClusterOfFileHi;
     };
-    USHORT         LastWriteTime;
-    USHORT         LastWriteDate;
-    USHORT         FirstClusterOfFile;
-    ULONG          FileSize;
+    ULONG   LastWriteTime;
+    USHORT  FirstClusterOfFile;
+    ULONG   FileSize;
 } DIRENT;
 
 //
@@ -119,14 +117,14 @@ typedef struct _DIRENT {
 //
 
 typedef struct _LFN_DIRENT {
-    UCHAR     Ordinal;
-    UCHAR     Name1[10];
-    UCHAR     Attributes;
-    UCHAR     Type;
-    UCHAR     Checksum;
-    UCHAR     Name2[12];
-    USHORT    MustBeZero;
-    UCHAR     Name3[4];
+    UCHAR   Ordinal;
+    UCHAR   Name1[10];
+    UCHAR   Attributes;
+    UCHAR   Type;
+    UCHAR   Checksum;
+    UCHAR   Name2[12];
+    USHORT  MustBeZero;
+    UCHAR   Name3[4];
 } LFN_DIRENT;
 
 #define FAT_LAST_LONG_ENTRY             0x40    // Ordinal field

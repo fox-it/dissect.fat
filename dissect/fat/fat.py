@@ -238,11 +238,8 @@ class DirectoryEntry(BaseDirectoryEntry):
     @cached_property
     def ctime(self) -> datetime.datetime:
         """Return the creation time of the directory entry."""
-        if self.dirent and (self.dirent.CreationDate or self.dirent.CreationTime):
-            return dostimestamp(
-                (self.dirent.CreationDate << 16) | self.dirent.CreationTime,
-                self.dirent.CreationMSec,
-            )
+        if self.dirent and self.dirent.CreationTime:
+            return dostimestamp(self.dirent.CreationTime, self.dirent.CreationMSec)
 
         return super().ctime
 
@@ -256,8 +253,8 @@ class DirectoryEntry(BaseDirectoryEntry):
 
     @cached_property
     def mtime(self) -> datetime.datetime:
-        if self.dirent:
-            return dostimestamp((self.dirent.LastWriteDate << 16) | self.dirent.LastWriteTime)
+        if self.dirent and self.dirent.LastWriteTime:
+            return dostimestamp(self.dirent.LastWriteTime)
 
         return super().mtime
 
@@ -312,10 +309,13 @@ VALID_BPB_MEDIA = {0xF0, 0xF8, 0xF9, 0xFA, 0xFB, 0xFC, 0xFD, 0xFE, 0xFF}
 
 
 def validate_boot_sector(sector: c_fat.BOOT_SECTOR | bytes) -> None:
-    """Validate the boot sector according to FAT specification. Raises :class:`InvalidBPB` if any field is invalid.
+    """Validate the boot sector according to FAT specification.
 
     Args:
         sector: The boot sector to validate, either as a parsed structure or as raw bytes.
+
+    Raises:
+        InvalidBootSector: If any field in the boot sector is invalid according to FAT specification.
     """
     if isinstance(sector, bytes):
         sector = c_fat.BOOT_SECTOR(sector)

@@ -156,13 +156,11 @@ class _c_fat(__cs__.cstruct):
         Attributes: _c_fat.uint8
         NtByte: _c_fat.uint8
         CreationMSec: _c_fat.uint8
-        CreationTime: _c_fat.uint16
-        CreationDate: _c_fat.uint16
+        CreationTime: _c_fat.uint32
         LastAccessDate: _c_fat.uint16
         ExtendedAttributes: _c_fat.uint16
         FirstClusterOfFileHi: _c_fat.uint16
-        LastWriteTime: _c_fat.uint16
-        LastWriteDate: _c_fat.uint16
+        LastWriteTime: _c_fat.uint32
         FirstClusterOfFile: _c_fat.uint16
         FileSize: _c_fat.uint32
         @overload
@@ -172,13 +170,11 @@ class _c_fat(__cs__.cstruct):
             Attributes: _c_fat.uint8 | None = ...,
             NtByte: _c_fat.uint8 | None = ...,
             CreationMSec: _c_fat.uint8 | None = ...,
-            CreationTime: _c_fat.uint16 | None = ...,
-            CreationDate: _c_fat.uint16 | None = ...,
+            CreationTime: _c_fat.uint32 | None = ...,
             LastAccessDate: _c_fat.uint16 | None = ...,
             ExtendedAttributes: _c_fat.uint16 | None = ...,
             FirstClusterOfFileHi: _c_fat.uint16 | None = ...,
-            LastWriteTime: _c_fat.uint16 | None = ...,
-            LastWriteDate: _c_fat.uint16 | None = ...,
+            LastWriteTime: _c_fat.uint32 | None = ...,
             FirstClusterOfFile: _c_fat.uint16 | None = ...,
             FileSize: _c_fat.uint32 | None = ...,
         ): ...

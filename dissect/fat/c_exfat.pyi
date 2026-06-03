@@ -4,307 +4,338 @@ from typing import BinaryIO, Literal, TypeAlias, overload
 import dissect.cstruct as __cs__
 
 class _c_exfat(__cs__.cstruct):
-    BOOT_SIGNATURE: Literal[43605] = ...
-    EXBOOT_SIGNATURE: Literal[2857697280] = ...
-    STR_EXFAT: Literal["EXFAT   "] = ...
-    EXFAT_MAX_FILE_LEN: Literal[255] = ...
-    VOLUME_DIRTY: Literal[2] = ...
-    MEDIA_FAILURE: Literal[4] = ...
-    EXFAT_EOF_CLUSTER: Literal[4294967295] = ...
-    EXFAT_BAD_CLUSTER: Literal[4294967287] = ...
-    EXFAT_FREE_CLUSTER: Literal[0] = ...
-    EXFAT_RESERVED_CLUSTERS: Literal[2] = ...
-    EXFAT_FIRST_CLUSTER: Literal[2] = ...
-    ALLOC_POSSIBLE: Literal[1] = ...
-    ALLOC_FAT_CHAIN: Literal[1] = ...
-    ALLOC_NO_FAT_CHAIN: Literal[3] = ...
-    DENTRY_SIZE: Literal[32] = ...
-    DENTRY_SIZE_BITS: Literal[5] = ...
-    MAX_EXFAT_DENTRIES: Literal[8388608] = ...
-    IS_EXFAT_DELETED: Literal["((x) < 0x80)"] = ...
-    EXFAT_UNUSED: Literal[0] = ...
-    EXFAT_DELETE: Literal[-129] = ...
-    EXFAT_INVAL: Literal[128] = ...
-    EXFAT_BITMAP: Literal[129] = ...
-    EXFAT_UPCASE: Literal[130] = ...
-    EXFAT_VOLUME: Literal[131] = ...
-    EXFAT_FILE: Literal[133] = ...
-    EXFAT_GUID: Literal[160] = ...
-    EXFAT_PADDING: Literal[161] = ...
-    EXFAT_ACLTAB: Literal[162] = ...
-    EXFAT_STREAM: Literal[192] = ...
-    EXFAT_NAME: Literal[193] = ...
-    EXFAT_ACL: Literal[194] = ...
-    EXFAT_VENDOR_EXT: Literal[224] = ...
-    EXFAT_VENDOR_ALLOC: Literal[225] = ...
-    CS_DIR_ENTRY: Literal[0] = ...
-    CS_BOOT_SECTOR: Literal[1] = ...
-    CS_DEFAULT: Literal[2] = ...
-    EXFAT_ATTR_READONLY: Literal[1] = ...
-    EXFAT_ATTR_HIDDEN: Literal[2] = ...
-    EXFAT_ATTR_SYSTEM: Literal[4] = ...
-    EXFAT_ATTR_VOLUME: Literal[8] = ...
-    EXFAT_ATTR_SUBDIR: Literal[16] = ...
-    EXFAT_ATTR_ARCHIVE: Literal[32] = ...
-    EXFAT_ATTR_RWMASK: Literal[62] = ...
-    BOOTSEC_JUMP_BOOT_LEN: Literal[3] = ...
-    BOOTSEC_FS_NAME_LEN: Literal[8] = ...
-    BOOTSEC_OLDBPB_LEN: Literal[53] = ...
-    EXFAT_FILE_NAME_LEN: Literal[15] = ...
-    EXFAT_TZ_VALID: Literal[128] = ...
-    EXFAT_MIN_TIMESTAMP_SECS: Literal[315532800] = ...
-    EXFAT_MAX_TIMESTAMP_SECS: Literal[4354819199] = ...
-    class boot_sector(__cs__.Structure):
-        jmp_boot: __cs__.Array[_c_exfat.uint8]
-        fs_name: __cs__.Array[_c_exfat.uint8]
-        must_be_zero: __cs__.Array[_c_exfat.uint8]
-        partition_offset: _c_exfat.uint64
-        vol_length: _c_exfat.uint64
-        fat_offset: _c_exfat.uint32
-        fat_length: _c_exfat.uint32
-        clu_offset: _c_exfat.uint32
-        clu_count: _c_exfat.uint32
-        root_cluster: _c_exfat.uint32
-        vol_serial: _c_exfat.uint32
-        fs_revision: __cs__.Array[_c_exfat.uint8]
-        vol_flags: _c_exfat.uint16
-        sect_size_bits: _c_exfat.uint8
-        sect_per_clus_bits: _c_exfat.uint8
-        num_fats: _c_exfat.uint8
-        drv_sel: _c_exfat.uint8
-        percent_in_use: _c_exfat.uint8
-        reserved: __cs__.Array[_c_exfat.uint8]
-        boot_code: __cs__.Array[_c_exfat.uint8]
-        signature: _c_exfat.uint16
+    EXFAT_DIRENT_SIZE: Literal[32] = ...
+    EXFAT_DIRENT_TYPE_END: Literal[0] = ...
+    EXFAT_DIRENT_TYPE_UNUSED: Literal[128] = ...
+    EXFAT_DIRENT_TYPE_ALLOC_BITMAP: Literal[129] = ...
+    EXFAT_DIRENT_TYPE_UPCASE: Literal[130] = ...
+    EXFAT_DIRENT_TYPE_VOLUME_LABEL: Literal[131] = ...
+    EXFAT_DIRENT_TYPE_FILE: Literal[133] = ...
+    EXFAT_DIRENT_TYPE_VOLUME_GUID: Literal[160] = ...
+    EXFAT_DIRENT_TYPE_TEXFAT_PADDING: Literal[161] = ...
+    EXFAT_DIRENT_TYPE_STREAM_EXT: Literal[192] = ...
+    EXFAT_DIRENT_TYPE_FILE_NAME: Literal[193] = ...
+    EXFAT_DIRENT_TYPE_VENDOR_EXT: Literal[224] = ...
+    EXFAT_DIRENT_TYPE_VENDOR_ALLOC: Literal[225] = ...
+    EXFAT_DIRENT_FLAG_ALLOC_POSSIBLE: Literal[1] = ...
+    EXFAT_DIRENT_FLAG_NO_FAT_CHAIN: Literal[2] = ...
+    class _BOOT_SECTOR(__cs__.Structure):
+        JumpBoot: __cs__.Array[_c_exfat.uint8]
+        FileSystemName: __cs__.Array[_c_exfat.uint8]
+        MustBeZero: __cs__.Array[_c_exfat.uint8]
+        PartitionOffset: _c_exfat.uint64
+        VolumeLength: _c_exfat.uint64
+        FatOffset: _c_exfat.uint32
+        FatLength: _c_exfat.uint32
+        ClusterHeapOffset: _c_exfat.uint32
+        ClusterCount: _c_exfat.uint32
+        FirstClusterOfRootDirectory: _c_exfat.uint32
+        VolumeSerialNumber: _c_exfat.uint32
+        FileSystemRevision: _c_exfat.uint16
+        VolumeFlags: _c_exfat.uint16
+        BytesPerSectorShift: _c_exfat.uint8
+        SectorsPerClusterShift: _c_exfat.uint8
+        NumberOfFats: _c_exfat.uint8
+        DriveSelect: _c_exfat.uint8
+        PercentInUse: _c_exfat.uint8
+        Reserved: __cs__.Array[_c_exfat.uint8]
+        BootCode: __cs__.Array[_c_exfat.uint8]
+        BootSignature: _c_exfat.uint16
         @overload
         def __init__(
             self,
-            jmp_boot: __cs__.Array[_c_exfat.uint8] | None = ...,
-            fs_name: __cs__.Array[_c_exfat.uint8] | None = ...,
-            must_be_zero: __cs__.Array[_c_exfat.uint8] | None = ...,
-            partition_offset: _c_exfat.uint64 | None = ...,
-            vol_length: _c_exfat.uint64 | None = ...,
-            fat_offset: _c_exfat.uint32 | None = ...,
-            fat_length: _c_exfat.uint32 | None = ...,
-            clu_offset: _c_exfat.uint32 | None = ...,
-            clu_count: _c_exfat.uint32 | None = ...,
-            root_cluster: _c_exfat.uint32 | None = ...,
-            vol_serial: _c_exfat.uint32 | None = ...,
-            fs_revision: __cs__.Array[_c_exfat.uint8] | None = ...,
-            vol_flags: _c_exfat.uint16 | None = ...,
-            sect_size_bits: _c_exfat.uint8 | None = ...,
-            sect_per_clus_bits: _c_exfat.uint8 | None = ...,
-            num_fats: _c_exfat.uint8 | None = ...,
-            drv_sel: _c_exfat.uint8 | None = ...,
-            percent_in_use: _c_exfat.uint8 | None = ...,
-            reserved: __cs__.Array[_c_exfat.uint8] | None = ...,
-            boot_code: __cs__.Array[_c_exfat.uint8] | None = ...,
-            signature: _c_exfat.uint16 | None = ...,
+            JumpBoot: __cs__.Array[_c_exfat.uint8] | None = ...,
+            FileSystemName: __cs__.Array[_c_exfat.uint8] | None = ...,
+            MustBeZero: __cs__.Array[_c_exfat.uint8] | None = ...,
+            PartitionOffset: _c_exfat.uint64 | None = ...,
+            VolumeLength: _c_exfat.uint64 | None = ...,
+            FatOffset: _c_exfat.uint32 | None = ...,
+            FatLength: _c_exfat.uint32 | None = ...,
+            ClusterHeapOffset: _c_exfat.uint32 | None = ...,
+            ClusterCount: _c_exfat.uint32 | None = ...,
+            FirstClusterOfRootDirectory: _c_exfat.uint32 | None = ...,
+            VolumeSerialNumber: _c_exfat.uint32 | None = ...,
+            FileSystemRevision: _c_exfat.uint16 | None = ...,
+            VolumeFlags: _c_exfat.uint16 | None = ...,
+            BytesPerSectorShift: _c_exfat.uint8 | None = ...,
+            SectorsPerClusterShift: _c_exfat.uint8 | None = ...,
+            NumberOfFats: _c_exfat.uint8 | None = ...,
+            DriveSelect: _c_exfat.uint8 | None = ...,
+            PercentInUse: _c_exfat.uint8 | None = ...,
+            Reserved: __cs__.Array[_c_exfat.uint8] | None = ...,
+            BootCode: __cs__.Array[_c_exfat.uint8] | None = ...,
+            BootSignature: _c_exfat.uint16 | None = ...,
         ): ...
         @overload
         def __init__(self, fh: bytes | memoryview | bytearray | BinaryIO, /): ...
 
-    class exfat_dentry(__cs__.Structure):
-        type: _c_exfat.uint8
-        class __anonymous_0__(__cs__.Structure):
-            num_ext: _c_exfat.uint8
-            checksum: _c_exfat.uint16
-            attr: _c_exfat.uint16
-            reserved1: _c_exfat.uint16
-            create_time: _c_exfat.uint16
-            create_date: _c_exfat.uint16
-            modify_time: _c_exfat.uint16
-            modify_date: _c_exfat.uint16
-            access_time: _c_exfat.uint16
-            access_date: _c_exfat.uint16
-            create_time_cs: _c_exfat.uint8
-            modify_time_cs: _c_exfat.uint8
-            create_tz: _c_exfat.uint8
-            modify_tz: _c_exfat.uint8
-            access_tz: _c_exfat.uint8
-            reserved2: __cs__.Array[_c_exfat.uint8]
-            @overload
-            def __init__(
-                self,
-                num_ext: _c_exfat.uint8 | None = ...,
-                checksum: _c_exfat.uint16 | None = ...,
-                attr: _c_exfat.uint16 | None = ...,
-                reserved1: _c_exfat.uint16 | None = ...,
-                create_time: _c_exfat.uint16 | None = ...,
-                create_date: _c_exfat.uint16 | None = ...,
-                modify_time: _c_exfat.uint16 | None = ...,
-                modify_date: _c_exfat.uint16 | None = ...,
-                access_time: _c_exfat.uint16 | None = ...,
-                access_date: _c_exfat.uint16 | None = ...,
-                create_time_cs: _c_exfat.uint8 | None = ...,
-                modify_time_cs: _c_exfat.uint8 | None = ...,
-                create_tz: _c_exfat.uint8 | None = ...,
-                modify_tz: _c_exfat.uint8 | None = ...,
-                access_tz: _c_exfat.uint8 | None = ...,
-                reserved2: __cs__.Array[_c_exfat.uint8] | None = ...,
-            ): ...
-            @overload
-            def __init__(self, fh: bytes | memoryview | bytearray | BinaryIO, /): ...
-
-        file: __anonymous_0__
-        class __anonymous_1__(__cs__.Structure):
-            flags: _c_exfat.uint8
-            reserved1: _c_exfat.uint8
-            name_len: _c_exfat.uint8
-            name_hash: _c_exfat.uint16
-            reserved2: _c_exfat.uint16
-            valid_size: _c_exfat.uint64
-            reserved3: _c_exfat.uint32
-            start_clu: _c_exfat.uint32
-            size: _c_exfat.uint64
-            @overload
-            def __init__(
-                self,
-                flags: _c_exfat.uint8 | None = ...,
-                reserved1: _c_exfat.uint8 | None = ...,
-                name_len: _c_exfat.uint8 | None = ...,
-                name_hash: _c_exfat.uint16 | None = ...,
-                reserved2: _c_exfat.uint16 | None = ...,
-                valid_size: _c_exfat.uint64 | None = ...,
-                reserved3: _c_exfat.uint32 | None = ...,
-                start_clu: _c_exfat.uint32 | None = ...,
-                size: _c_exfat.uint64 | None = ...,
-            ): ...
-            @overload
-            def __init__(self, fh: bytes | memoryview | bytearray | BinaryIO, /): ...
-
-        stream: __anonymous_1__
-        class __anonymous_2__(__cs__.Structure):
-            flags: _c_exfat.uint8
-            unicode_0_14: __cs__.Array[_c_exfat.uint16]
-            @overload
-            def __init__(
-                self, flags: _c_exfat.uint8 | None = ..., unicode_0_14: __cs__.Array[_c_exfat.uint16] | None = ...
-            ): ...
-            @overload
-            def __init__(self, fh: bytes | memoryview | bytearray | BinaryIO, /): ...
-
-        name: __anonymous_2__
-        class __anonymous_3__(__cs__.Structure):
-            flags: _c_exfat.uint8
-            reserved: __cs__.Array[_c_exfat.uint8]
-            start_clu: _c_exfat.uint32
-            size: _c_exfat.uint64
-            @overload
-            def __init__(
-                self,
-                flags: _c_exfat.uint8 | None = ...,
-                reserved: __cs__.Array[_c_exfat.uint8] | None = ...,
-                start_clu: _c_exfat.uint32 | None = ...,
-                size: _c_exfat.uint64 | None = ...,
-            ): ...
-            @overload
-            def __init__(self, fh: bytes | memoryview | bytearray | BinaryIO, /): ...
-
-        bitmap: __anonymous_3__
-        class __anonymous_4__(__cs__.Structure):
-            reserved1: __cs__.Array[_c_exfat.uint8]
-            checksum: _c_exfat.uint32
-            reserved2: __cs__.Array[_c_exfat.uint8]
-            start_clu: _c_exfat.uint32
-            size: _c_exfat.uint64
-            @overload
-            def __init__(
-                self,
-                reserved1: __cs__.Array[_c_exfat.uint8] | None = ...,
-                checksum: _c_exfat.uint32 | None = ...,
-                reserved2: __cs__.Array[_c_exfat.uint8] | None = ...,
-                start_clu: _c_exfat.uint32 | None = ...,
-                size: _c_exfat.uint64 | None = ...,
-            ): ...
-            @overload
-            def __init__(self, fh: bytes | memoryview | bytearray | BinaryIO, /): ...
-
-        upcase: __anonymous_4__
-        class __anonymous_5__(__cs__.Structure):
-            char_count: _c_exfat.uint8
-            vol_label: __cs__.CharArray
-            reserved2: __cs__.Array[_c_exfat.uint8]
-            @overload
-            def __init__(
-                self,
-                char_count: _c_exfat.uint8 | None = ...,
-                vol_label: __cs__.CharArray | None = ...,
-                reserved2: __cs__.Array[_c_exfat.uint8] | None = ...,
-            ): ...
-            @overload
-            def __init__(self, fh: bytes | memoryview | bytearray | BinaryIO, /): ...
-
-        volume_label: __anonymous_5__
-        class __anonymous_6__(__cs__.Structure):
-            flags: _c_exfat.uint8
-            vendor_guid: __cs__.Array[_c_exfat.uint8]
-            vendor_defined: __cs__.Array[_c_exfat.uint8]
-            @overload
-            def __init__(
-                self,
-                flags: _c_exfat.uint8 | None = ...,
-                vendor_guid: __cs__.Array[_c_exfat.uint8] | None = ...,
-                vendor_defined: __cs__.Array[_c_exfat.uint8] | None = ...,
-            ): ...
-            @overload
-            def __init__(self, fh: bytes | memoryview | bytearray | BinaryIO, /): ...
-
-        vendor_ext: __anonymous_6__
-        class __anonymous_7__(__cs__.Structure):
-            flags: _c_exfat.uint8
-            vendor_guid: __cs__.Array[_c_exfat.uint8]
-            vendor_defined: __cs__.Array[_c_exfat.uint8]
-            start_clu: _c_exfat.uint32
-            size: _c_exfat.uint64
-            @overload
-            def __init__(
-                self,
-                flags: _c_exfat.uint8 | None = ...,
-                vendor_guid: __cs__.Array[_c_exfat.uint8] | None = ...,
-                vendor_defined: __cs__.Array[_c_exfat.uint8] | None = ...,
-                start_clu: _c_exfat.uint32 | None = ...,
-                size: _c_exfat.uint64 | None = ...,
-            ): ...
-            @overload
-            def __init__(self, fh: bytes | memoryview | bytearray | BinaryIO, /): ...
-
-        vendor_alloc: __anonymous_7__
-        class __anonymous_8__(__cs__.Structure):
-            flags: _c_exfat.uint8
-            custom_defined: __cs__.Array[_c_exfat.uint8]
-            start_clu: _c_exfat.uint32
-            size: _c_exfat.uint64
-            @overload
-            def __init__(
-                self,
-                flags: _c_exfat.uint8 | None = ...,
-                custom_defined: __cs__.Array[_c_exfat.uint8] | None = ...,
-                start_clu: _c_exfat.uint32 | None = ...,
-                size: _c_exfat.uint64 | None = ...,
-            ): ...
-            @overload
-            def __init__(self, fh: bytes | memoryview | bytearray | BinaryIO, /): ...
-
-        generic_secondary: __anonymous_8__
+    BOOT_SECTOR: TypeAlias = _BOOT_SECTOR
+    class _DIRENT(__cs__.Structure):
+        EntryType: _c_exfat.uint8
+        CustomDefined: __cs__.Array[_c_exfat.uint8]
         @overload
         def __init__(
-            self,
-            type: _c_exfat.uint8 | None = ...,
-            file: __anonymous_0__ | None = ...,
-            stream: __anonymous_1__ | None = ...,
-            name: __anonymous_2__ | None = ...,
-            bitmap: __anonymous_3__ | None = ...,
-            upcase: __anonymous_4__ | None = ...,
-            volume_label: __anonymous_5__ | None = ...,
-            vendor_ext: __anonymous_6__ | None = ...,
-            vendor_alloc: __anonymous_7__ | None = ...,
-            generic_secondary: __anonymous_8__ | None = ...,
+            self, EntryType: _c_exfat.uint8 | None = ..., CustomDefined: __cs__.Array[_c_exfat.uint8] | None = ...
         ): ...
         @overload
         def __init__(self, fh: bytes | memoryview | bytearray | BinaryIO, /): ...
+
+    DIRENT: TypeAlias = _DIRENT
+    class _GENERIC_PRIMARY_DIRENT(__cs__.Structure):
+        EntryType: _c_exfat.uint8
+        SecondaryCount: _c_exfat.uint8
+        SetChecksum: _c_exfat.uint16
+        GeneralPrimaryFlags: _c_exfat.uint16
+        CustomDefined: __cs__.Array[_c_exfat.uint8]
+        FirstCluster: _c_exfat.uint32
+        DataLength: _c_exfat.uint64
+        @overload
+        def __init__(
+            self,
+            EntryType: _c_exfat.uint8 | None = ...,
+            SecondaryCount: _c_exfat.uint8 | None = ...,
+            SetChecksum: _c_exfat.uint16 | None = ...,
+            GeneralPrimaryFlags: _c_exfat.uint16 | None = ...,
+            CustomDefined: __cs__.Array[_c_exfat.uint8] | None = ...,
+            FirstCluster: _c_exfat.uint32 | None = ...,
+            DataLength: _c_exfat.uint64 | None = ...,
+        ): ...
+        @overload
+        def __init__(self, fh: bytes | memoryview | bytearray | BinaryIO, /): ...
+
+    GENERIC_PRIMARY_DIRENT: TypeAlias = _GENERIC_PRIMARY_DIRENT
+    class _GENERIC_SECONDARY_DIRENT(__cs__.Structure):
+        EntryType: _c_exfat.uint8
+        GeneralSecondaryFlags: _c_exfat.uint8
+        CustomDefined: __cs__.Array[_c_exfat.uint8]
+        FirstCluster: _c_exfat.uint32
+        DataLength: _c_exfat.uint64
+        @overload
+        def __init__(
+            self,
+            EntryType: _c_exfat.uint8 | None = ...,
+            GeneralSecondaryFlags: _c_exfat.uint8 | None = ...,
+            CustomDefined: __cs__.Array[_c_exfat.uint8] | None = ...,
+            FirstCluster: _c_exfat.uint32 | None = ...,
+            DataLength: _c_exfat.uint64 | None = ...,
+        ): ...
+        @overload
+        def __init__(self, fh: bytes | memoryview | bytearray | BinaryIO, /): ...
+
+    GENERIC_SECONDARY_DIRENT: TypeAlias = _GENERIC_SECONDARY_DIRENT
+    class _ALLOC_BITMAP_DIRENT(__cs__.Structure):
+        EntryType: _c_exfat.uint8
+        BitmapFlags: _c_exfat.uint8
+        Reserved: __cs__.Array[_c_exfat.uint8]
+        FirstCluster: _c_exfat.uint32
+        DataLength: _c_exfat.uint64
+        @overload
+        def __init__(
+            self,
+            EntryType: _c_exfat.uint8 | None = ...,
+            BitmapFlags: _c_exfat.uint8 | None = ...,
+            Reserved: __cs__.Array[_c_exfat.uint8] | None = ...,
+            FirstCluster: _c_exfat.uint32 | None = ...,
+            DataLength: _c_exfat.uint64 | None = ...,
+        ): ...
+        @overload
+        def __init__(self, fh: bytes | memoryview | bytearray | BinaryIO, /): ...
+
+    ALLOC_BITMAP_DIRENT: TypeAlias = _ALLOC_BITMAP_DIRENT
+    class _UPCASE_DIRENT(__cs__.Structure):
+        EntryType: _c_exfat.uint8
+        Reserved1: __cs__.Array[_c_exfat.uint8]
+        TableChecksum: _c_exfat.uint32
+        Reserved2: __cs__.Array[_c_exfat.uint8]
+        FirstCluster: _c_exfat.uint32
+        DataLength: _c_exfat.uint64
+        @overload
+        def __init__(
+            self,
+            EntryType: _c_exfat.uint8 | None = ...,
+            Reserved1: __cs__.Array[_c_exfat.uint8] | None = ...,
+            TableChecksum: _c_exfat.uint32 | None = ...,
+            Reserved2: __cs__.Array[_c_exfat.uint8] | None = ...,
+            FirstCluster: _c_exfat.uint32 | None = ...,
+            DataLength: _c_exfat.uint64 | None = ...,
+        ): ...
+        @overload
+        def __init__(self, fh: bytes | memoryview | bytearray | BinaryIO, /): ...
+
+    UPCASE_DIRENT: TypeAlias = _UPCASE_DIRENT
+    class _VOLUME_LABEL_DIRENT(__cs__.Structure):
+        EntryType: _c_exfat.uint8
+        CharacterCount: _c_exfat.uint8
+        VolumeLabel: __cs__.Array[_c_exfat.uint8]
+        Reserved: __cs__.Array[_c_exfat.uint8]
+        @overload
+        def __init__(
+            self,
+            EntryType: _c_exfat.uint8 | None = ...,
+            CharacterCount: _c_exfat.uint8 | None = ...,
+            VolumeLabel: __cs__.Array[_c_exfat.uint8] | None = ...,
+            Reserved: __cs__.Array[_c_exfat.uint8] | None = ...,
+        ): ...
+        @overload
+        def __init__(self, fh: bytes | memoryview | bytearray | BinaryIO, /): ...
+
+    VOLUME_LABEL_DIRENT: TypeAlias = _VOLUME_LABEL_DIRENT
+    class _FILE_DIRENT(__cs__.Structure):
+        EntryType: _c_exfat.uint8
+        SecondaryCount: _c_exfat.uint8
+        SetChecksum: _c_exfat.uint16
+        FileAttributes: _c_exfat.uint16
+        Reserved1: __cs__.Array[_c_exfat.uint8]
+        CreateTimestamp: _c_exfat.uint32
+        LastModifiedTimestamp: _c_exfat.uint32
+        LastAccessedTimestamp: _c_exfat.uint32
+        Create10msIncrement: _c_exfat.uint8
+        LastModified10msIncrement: _c_exfat.uint8
+        CreateUtcOffset: _c_exfat.uint8
+        LastModifiedUtcOffset: _c_exfat.uint8
+        LastAccessedUtcOffset: _c_exfat.uint8
+        Reserved2: __cs__.Array[_c_exfat.uint8]
+        @overload
+        def __init__(
+            self,
+            EntryType: _c_exfat.uint8 | None = ...,
+            SecondaryCount: _c_exfat.uint8 | None = ...,
+            SetChecksum: _c_exfat.uint16 | None = ...,
+            FileAttributes: _c_exfat.uint16 | None = ...,
+            Reserved1: __cs__.Array[_c_exfat.uint8] | None = ...,
+            CreateTimestamp: _c_exfat.uint32 | None = ...,
+            LastModifiedTimestamp: _c_exfat.uint32 | None = ...,
+            LastAccessedTimestamp: _c_exfat.uint32 | None = ...,
+            Create10msIncrement: _c_exfat.uint8 | None = ...,
+            LastModified10msIncrement: _c_exfat.uint8 | None = ...,
+            CreateUtcOffset: _c_exfat.uint8 | None = ...,
+            LastModifiedUtcOffset: _c_exfat.uint8 | None = ...,
+            LastAccessedUtcOffset: _c_exfat.uint8 | None = ...,
+            Reserved2: __cs__.Array[_c_exfat.uint8] | None = ...,
+        ): ...
+        @overload
+        def __init__(self, fh: bytes | memoryview | bytearray | BinaryIO, /): ...
+
+    FILE_DIRENT: TypeAlias = _FILE_DIRENT
+    class _VOLUME_GUID_DIRENT(__cs__.Structure):
+        EntryType: _c_exfat.uint8
+        SecondaryCount: _c_exfat.uint8
+        SetChecksum: _c_exfat.uint16
+        GeneralPrimaryFlags: _c_exfat.uint16
+        VolumeGuid: __cs__.Array[_c_exfat.uint8]
+        Reserved: __cs__.Array[_c_exfat.uint8]
+        @overload
+        def __init__(
+            self,
+            EntryType: _c_exfat.uint8 | None = ...,
+            SecondaryCount: _c_exfat.uint8 | None = ...,
+            SetChecksum: _c_exfat.uint16 | None = ...,
+            GeneralPrimaryFlags: _c_exfat.uint16 | None = ...,
+            VolumeGuid: __cs__.Array[_c_exfat.uint8] | None = ...,
+            Reserved: __cs__.Array[_c_exfat.uint8] | None = ...,
+        ): ...
+        @overload
+        def __init__(self, fh: bytes | memoryview | bytearray | BinaryIO, /): ...
+
+    VOLUME_GUID_DIRENT: TypeAlias = _VOLUME_GUID_DIRENT
+    class _STREAM_EXT_DIRENT(__cs__.Structure):
+        EntryType: _c_exfat.uint8
+        GeneralSecondaryFlags: _c_exfat.uint8
+        Reserved1: _c_exfat.uint8
+        NameLength: _c_exfat.uint8
+        NameHash: _c_exfat.uint16
+        Reserved2: __cs__.Array[_c_exfat.uint8]
+        ValidDataLength: _c_exfat.uint64
+        Reserved3: __cs__.Array[_c_exfat.uint8]
+        FirstCluster: _c_exfat.uint32
+        DataLength: _c_exfat.uint64
+        @overload
+        def __init__(
+            self,
+            EntryType: _c_exfat.uint8 | None = ...,
+            GeneralSecondaryFlags: _c_exfat.uint8 | None = ...,
+            Reserved1: _c_exfat.uint8 | None = ...,
+            NameLength: _c_exfat.uint8 | None = ...,
+            NameHash: _c_exfat.uint16 | None = ...,
+            Reserved2: __cs__.Array[_c_exfat.uint8] | None = ...,
+            ValidDataLength: _c_exfat.uint64 | None = ...,
+            Reserved3: __cs__.Array[_c_exfat.uint8] | None = ...,
+            FirstCluster: _c_exfat.uint32 | None = ...,
+            DataLength: _c_exfat.uint64 | None = ...,
+        ): ...
+        @overload
+        def __init__(self, fh: bytes | memoryview | bytearray | BinaryIO, /): ...
+
+    STREAM_EXT_DIRENT: TypeAlias = _STREAM_EXT_DIRENT
+    class _FILE_NAME_DIRENT(__cs__.Structure):
+        EntryType: _c_exfat.uint8
+        GeneralSecondaryFlags: _c_exfat.uint8
+        FileName: __cs__.Array[_c_exfat.uint8]
+        @overload
+        def __init__(
+            self,
+            EntryType: _c_exfat.uint8 | None = ...,
+            GeneralSecondaryFlags: _c_exfat.uint8 | None = ...,
+            FileName: __cs__.Array[_c_exfat.uint8] | None = ...,
+        ): ...
+        @overload
+        def __init__(self, fh: bytes | memoryview | bytearray | BinaryIO, /): ...
+
+    FILE_NAME_DIRENT: TypeAlias = _FILE_NAME_DIRENT
+    class _VENDOR_EXT_DIRENT(__cs__.Structure):
+        EntryType: _c_exfat.uint8
+        GeneralSecondaryFlags: _c_exfat.uint8
+        VendorGuid: __cs__.Array[_c_exfat.uint8]
+        VendorDefined: __cs__.Array[_c_exfat.uint8]
+        @overload
+        def __init__(
+            self,
+            EntryType: _c_exfat.uint8 | None = ...,
+            GeneralSecondaryFlags: _c_exfat.uint8 | None = ...,
+            VendorGuid: __cs__.Array[_c_exfat.uint8] | None = ...,
+            VendorDefined: __cs__.Array[_c_exfat.uint8] | None = ...,
+        ): ...
+        @overload
+        def __init__(self, fh: bytes | memoryview | bytearray | BinaryIO, /): ...
+
+    VENDOR_EXT_DIRENT: TypeAlias = _VENDOR_EXT_DIRENT
+    class _VENDOR_ALLOC_DIRENT(__cs__.Structure):
+        EntryType: _c_exfat.uint8
+        GeneralSecondaryFlags: _c_exfat.uint8
+        VendorGuid: __cs__.Array[_c_exfat.uint8]
+        VendorDefined: __cs__.Array[_c_exfat.uint8]
+        FirstCluster: _c_exfat.uint32
+        DataLength: _c_exfat.uint64
+        @overload
+        def __init__(
+            self,
+            EntryType: _c_exfat.uint8 | None = ...,
+            GeneralSecondaryFlags: _c_exfat.uint8 | None = ...,
+            VendorGuid: __cs__.Array[_c_exfat.uint8] | None = ...,
+            VendorDefined: __cs__.Array[_c_exfat.uint8] | None = ...,
+            FirstCluster: _c_exfat.uint32 | None = ...,
+            DataLength: _c_exfat.uint64 | None = ...,
+        ): ...
+        @overload
+        def __init__(self, fh: bytes | memoryview | bytearray | BinaryIO, /): ...
+
+    VENDOR_ALLOC_DIRENT: TypeAlias = _VENDOR_ALLOC_DIRENT
 
 # Technically `c_exfat` is an instance of `_c_exfat`, but then we can't use it in type hints
 c_exfat: TypeAlias = _c_exfat
 
-BOOT_REGION_SIZE: Literal[6144] = ...
+PRIMARY_DIRENT = (
+    c_exfat.ALLOC_BITMAP_DIRENT
+    | c_exfat.UPCASE_DIRENT
+    | c_exfat.VOLUME_LABEL_DIRENT
+    | c_exfat.FILE_DIRENT
+    | c_exfat.VOLUME_GUID_DIRENT
+    | c_exfat.GENERIC_PRIMARY_DIRENT
+)
+SECONDARY_DIRENT = (
+    c_exfat.STREAM_EXT_DIRENT
+    | c_exfat.FILE_NAME_DIRENT
+    | c_exfat.VENDOR_EXT_DIRENT
+    | c_exfat.VENDOR_ALLOC_DIRENT
+    | c_exfat.GENERIC_SECONDARY_DIRENT
+)

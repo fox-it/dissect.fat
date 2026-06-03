@@ -81,7 +81,7 @@ class BaseDirectoryEntry:
     """Base class for FAT directory entries.
 
     Args:
-        fs: The FATX filesystem this directory entry belongs to.
+        fs: The filesystem this directory entry belongs to.
         fh: File-like object positioned at the start of the directory entry to read.
     """
 
@@ -96,7 +96,7 @@ class BaseDirectoryEntry:
         self.dataruns = cache(self.dataruns)
 
     def __repr__(self) -> str:
-        return f"<{self.__class__.__name__} name={self.name}>"
+        return f"<{self.__class__.__name__} name={self.name!r}>"
 
     def _read_dirent(self, fh: BinaryIO | None) -> tuple[Any | None, list[Any]]:
         """Read a directory entry from the given file handle, handling secondary entries if present.

@@ -1,188 +1,176 @@
 # Resources:
-# - https://github.com/torvalds/linux/blob/master/fs/exfat/exfat_raw.h
+# - https://learn.microsoft.com/en-us/windows/win32/fileio/exfat-specification
 
 from __future__ import annotations
 
 from dissect.cstruct import cstruct
 
 exfat_def = """
-#define BOOT_SIGNATURE              0xAA55
-#define EXBOOT_SIGNATURE            0xAA550000
-#define STR_EXFAT                   "EXFAT   "      /* size should be 8 */
+typedef struct _BOOT_SECTOR {
+    UCHAR       JumpBoot[3];
+    UCHAR       FileSystemName[8];
+    UCHAR       MustBeZero[53];
+    ULONGLONG   PartitionOffset;
+    ULONGLONG   VolumeLength;
+    ULONG       FatOffset;
+    ULONG       FatLength;
+    ULONG       ClusterHeapOffset;
+    ULONG       ClusterCount;
+    ULONG       FirstClusterOfRootDirectory;
+    ULONG       VolumeSerialNumber;
+    USHORT      FileSystemRevision;
+    USHORT      VolumeFlags;
+    UCHAR       BytesPerSectorShift;
+    UCHAR       SectorsPerClusterShift;
+    UCHAR       NumberOfFats;
+    UCHAR       DriveSelect;
+    UCHAR       PercentInUse;
+    UCHAR       Reserved[7];
+    UCHAR       BootCode[390];
+    USHORT      BootSignature;
+} BOOT_SECTOR;
 
-#define EXFAT_MAX_FILE_LEN          255
+#define EXFAT_DIRENT_SIZE           32
 
-#define VOLUME_DIRTY                0x0002
-#define MEDIA_FAILURE               0x0004
+#define EXFAT_DIRENT_TYPE_END            0x00
+#define EXFAT_DIRENT_TYPE_UNUSED         0x80
+#define EXFAT_DIRENT_TYPE_ALLOC_BITMAP   0x81
+#define EXFAT_DIRENT_TYPE_UPCASE         0x82
+#define EXFAT_DIRENT_TYPE_VOLUME_LABEL   0x83
+#define EXFAT_DIRENT_TYPE_FILE           0x85
+#define EXFAT_DIRENT_TYPE_VOLUME_GUID    0xA0
+#define EXFAT_DIRENT_TYPE_TEXFAT_PADDING 0xA1
+#define EXFAT_DIRENT_TYPE_STREAM_EXT     0xC0
+#define EXFAT_DIRENT_TYPE_FILE_NAME      0xC1
+#define EXFAT_DIRENT_TYPE_VENDOR_EXT     0xE0
+#define EXFAT_DIRENT_TYPE_VENDOR_ALLOC   0xE1
 
-#define EXFAT_EOF_CLUSTER           0xFFFFFFFFu
-#define EXFAT_BAD_CLUSTER           0xFFFFFFF7u
-#define EXFAT_FREE_CLUSTER          0
-/* Cluster 0, 1 are reserved, the first cluster is 2 in the cluster heap. */
-#define EXFAT_RESERVED_CLUSTERS     2
-#define EXFAT_FIRST_CLUSTER         2
+#define EXFAT_DIRENT_FLAG_ALLOC_POSSIBLE 0x01
+#define EXFAT_DIRENT_FLAG_NO_FAT_CHAIN   0x02
 
-/* AllocationPossible and NoFatChain field in GeneralSecondaryFlags Field */
-#define ALLOC_POSSIBLE              0x01
-#define ALLOC_FAT_CHAIN             0x01
-#define ALLOC_NO_FAT_CHAIN          0x03
+typedef struct _DIRENT {
+    UCHAR       EntryType;
+    UCHAR       CustomDefined[31];
+} DIRENT;
 
-#define DENTRY_SIZE                 32              /* directory entry size */
-#define DENTRY_SIZE_BITS            5
+typedef struct _GENERIC_PRIMARY_DIRENT {
+    UCHAR       EntryType;
+    UCHAR       SecondaryCount;
+    USHORT      SetChecksum;
+    USHORT      GeneralPrimaryFlags;
+    UCHAR       CustomDefined[14];
+    ULONG       FirstCluster;
+    ULONGLONG   DataLength;
+} GENERIC_PRIMARY_DIRENT;
 
-/* exFAT allows 8388608(256MB) directory entries */
-#define MAX_EXFAT_DENTRIES          8388608
+typedef struct _GENERIC_SECONDARY_DIRENT {
+    UCHAR       EntryType;
+    UCHAR       GeneralSecondaryFlags;
+    UCHAR       CustomDefined[18];
+    ULONG       FirstCluster;
+    ULONGLONG   DataLength;
+} GENERIC_SECONDARY_DIRENT;
 
-#define IS_EXFAT_DELETED(x)         ((x) < 0x80)    /* deleted file (0x01~0x7F) */
-/* dentry types */
-#define EXFAT_UNUSED                0x00            /* end of directory */
-#define EXFAT_DELETE                (~0x80)
+typedef struct _ALLOC_BITMAP_DIRENT {
+    UCHAR       EntryType;
+    UCHAR       BitmapFlags;
+    UCHAR       Reserved[18];
+    ULONG       FirstCluster;
+    ULONGLONG   DataLength;
+} ALLOC_BITMAP_DIRENT;
 
-#define EXFAT_INVAL                 0x80            /* invalid value */
-#define EXFAT_BITMAP                0x81            /* allocation bitmap */
-#define EXFAT_UPCASE                0x82            /* upcase table */
-#define EXFAT_VOLUME                0x83            /* volume label */
-#define EXFAT_FILE                  0x85            /* file or dir */
-#define EXFAT_GUID                  0xA0
-#define EXFAT_PADDING               0xA1
-#define EXFAT_ACLTAB                0xA2
-#define EXFAT_STREAM                0xC0            /* stream entry */
-#define EXFAT_NAME                  0xC1            /* file name entry */
-#define EXFAT_ACL                   0xC2            /* stream entry */
-#define EXFAT_VENDOR_EXT            0xE0            /* vendor extension entry */
-#define EXFAT_VENDOR_ALLOC          0xE1            /* vendor allocation entry */
+typedef struct _UPCASE_DIRENT {
+    UCHAR       EntryType;
+    UCHAR       Reserved1[3];
+    ULONG       TableChecksum;
+    UCHAR       Reserved2[12];
+    ULONG       FirstCluster;
+    ULONGLONG   DataLength;
+} UPCASE_DIRENT;
 
-/* checksum types */
-#define CS_DIR_ENTRY                0
-#define CS_BOOT_SECTOR              1
-#define CS_DEFAULT                  2
+typedef struct _VOLUME_LABEL_DIRENT {
+    UCHAR       EntryType;
+    UCHAR       CharacterCount;
+    UCHAR       VolumeLabel[22];
+    UCHAR       Reserved[8];
+} VOLUME_LABEL_DIRENT;
 
-/* file attributes */
-#define EXFAT_ATTR_READONLY         0x0001
-#define EXFAT_ATTR_HIDDEN           0x0002
-#define EXFAT_ATTR_SYSTEM           0x0004
-#define EXFAT_ATTR_VOLUME           0x0008
-#define EXFAT_ATTR_SUBDIR           0x0010
-#define EXFAT_ATTR_ARCHIVE          0x0020
+typedef struct _FILE_DIRENT {
+    UCHAR       EntryType;
+    UCHAR       SecondaryCount;
+    USHORT      SetChecksum;
+    USHORT      FileAttributes;
+    UCHAR       Reserved1[2];
+    ULONG       CreateTimestamp;
+    ULONG       LastModifiedTimestamp;
+    ULONG       LastAccessedTimestamp;
+    UCHAR       Create10msIncrement;
+    UCHAR       LastModified10msIncrement;
+    UCHAR       CreateUtcOffset;
+    UCHAR       LastModifiedUtcOffset;
+    UCHAR       LastAccessedUtcOffset;
+    UCHAR       Reserved2[7];
+} FILE_DIRENT;
 
-#define EXFAT_ATTR_RWMASK           (EXFAT_ATTR_HIDDEN | EXFAT_ATTR_SYSTEM | \
-                                     EXFAT_ATTR_VOLUME | EXFAT_ATTR_SUBDIR | \
-                                     EXFAT_ATTR_ARCHIVE)
+typedef struct _VOLUME_GUID_DIRENT {
+    UCHAR       EntryType;
+    UCHAR       SecondaryCount;
+    USHORT      SetChecksum;
+    USHORT      GeneralPrimaryFlags;
+    UCHAR       VolumeGuid[16];
+    UCHAR       Reserved[10];
+} VOLUME_GUID_DIRENT;
 
-#define BOOTSEC_JUMP_BOOT_LEN       3
-#define BOOTSEC_FS_NAME_LEN         8
-#define BOOTSEC_OLDBPB_LEN          53
-#define EXFAT_FILE_NAME_LEN         15
+typedef struct _STREAM_EXT_DIRENT {
+    UCHAR       EntryType;
+    UCHAR       GeneralSecondaryFlags;
+    UCHAR       Reserved1;
+    UCHAR       NameLength;
+    USHORT      NameHash;
+    UCHAR       Reserved2[2];
+    ULONGLONG   ValidDataLength;
+    UCHAR       Reserved3[4];
+    ULONG       FirstCluster;
+    ULONGLONG   DataLength;
+} STREAM_EXT_DIRENT;
 
-/* EXFAT: Main and Backup Boot Sector (512 bytes) */
-struct boot_sector {
-    __u8    jmp_boot[BOOTSEC_JUMP_BOOT_LEN];
-    __u8    fs_name[BOOTSEC_FS_NAME_LEN];
-    __u8    must_be_zero[BOOTSEC_OLDBPB_LEN];
-    __u64   partition_offset;
-    __u64   vol_length;
-    __u32   fat_offset;
-    __u32   fat_length;
-    __u32   clu_offset;
-    __u32   clu_count;
-    __u32   root_cluster;
-    __u32   vol_serial;
-    __u8    fs_revision[2];
-    __u16   vol_flags;
-    __u8    sect_size_bits;
-    __u8    sect_per_clus_bits;
-    __u8    num_fats;
-    __u8    drv_sel;
-    __u8    percent_in_use;
-    __u8    reserved[7];
-    __u8    boot_code[390];
-    __u16   signature;
-};
+typedef struct _FILE_NAME_DIRENT {
+    UCHAR       EntryType;
+    UCHAR       GeneralSecondaryFlags;
+    UCHAR       FileName[30];
+} FILE_NAME_DIRENT;
 
-struct exfat_dentry {
-    __u8 type;
-    union dentry {
-        struct {
-            __u8 num_ext;
-            __u16 checksum;
-            __u16 attr;
-            __u16 reserved1;
-            __u16 create_time;
-            __u16 create_date;
-            __u16 modify_time;
-            __u16 modify_date;
-            __u16 access_time;
-            __u16 access_date;
-            __u8 create_time_cs;
-            __u8 modify_time_cs;
-            __u8 create_tz;
-            __u8 modify_tz;
-            __u8 access_tz;
-            __u8 reserved2[7];
-        } file; /* file directory entry */
-        struct {
-            __u8 flags;
-            __u8 reserved1;
-            __u8 name_len;
-            __u16 name_hash;
-            __u16 reserved2;
-            __u64 valid_size;
-            __u32 reserved3;
-            __u32 start_clu;
-            __u64 size;
-        } stream; /* stream extension directory entry */
-        struct {
-            __u8 flags;
-            __u16 unicode_0_14[EXFAT_FILE_NAME_LEN];
-        } name; /* file name directory entry */
-        struct {
-            __u8 flags;
-            __u8 reserved[18];
-            __u32 start_clu;
-            __u64 size;
-        } bitmap; /* allocation bitmap directory entry */
-        struct {
-            __u8 reserved1[3];
-            __u32 checksum;
-            __u8 reserved2[12];
-            __u32 start_clu;
-            __u64 size;
-        } upcase; /* up-case table directory entry */
-        struct {
-            __u8 char_count;
-            char vol_label[char_count * 2];
-            __u8 reserved2[8];
-        } volume_label; /* volume label directory entry */
-        struct {
-            __u8 flags;
-            __u8 vendor_guid[16];
-            __u8 vendor_defined[14];
-        } vendor_ext; /* vendor extension directory entry */
-        struct {
-            __u8 flags;
-            __u8 vendor_guid[16];
-            __u8 vendor_defined[2];
-            __u32 start_clu;
-            __u64 size;
-        } vendor_alloc; /* vendor allocation directory entry */
-        struct {
-            __u8 flags;
-            __u8 custom_defined[18];
-            __u32 start_clu;
-            __u64 size;
-        } generic_secondary; /* generic secondary directory entry */
-    };
-};
+typedef struct _VENDOR_EXT_DIRENT {
+    UCHAR       EntryType;
+    UCHAR       GeneralSecondaryFlags;
+    UCHAR       VendorGuid[16];
+    UCHAR       VendorDefined[14];
+} VENDOR_EXT_DIRENT;
 
-#define EXFAT_TZ_VALID              (1 << 7)
-
-/* Jan 1 GMT 00:00:00 1980 */
-#define EXFAT_MIN_TIMESTAMP_SECS    315532800LL
-/* Dec 31 GMT 23:59:59 2107 */
-#define EXFAT_MAX_TIMESTAMP_SECS    4354819199LL
+typedef struct _VENDOR_ALLOC_DIRENT {
+    UCHAR       EntryType;
+    UCHAR       GeneralSecondaryFlags;
+    UCHAR       VendorGuid[16];
+    UCHAR       VendorDefined[2];
+    ULONG       FirstCluster;
+    ULONGLONG   DataLength;
+} VENDOR_ALLOC_DIRENT;
 """
 
 c_exfat = cstruct().load(exfat_def)
 
-# Main boot region is 12 sectors long
-BOOT_REGION_SIZE = 512 * 12
+PRIMARY_DIRENT = (
+    c_exfat.ALLOC_BITMAP_DIRENT
+    | c_exfat.UPCASE_DIRENT
+    | c_exfat.VOLUME_LABEL_DIRENT
+    | c_exfat.FILE_DIRENT
+    | c_exfat.VOLUME_GUID_DIRENT
+    | c_exfat.GENERIC_PRIMARY_DIRENT
+)
+SECONDARY_DIRENT = (
+    c_exfat.STREAM_EXT_DIRENT
+    | c_exfat.FILE_NAME_DIRENT
+    | c_exfat.VENDOR_EXT_DIRENT
+    | c_exfat.VENDOR_ALLOC_DIRENT
+    | c_exfat.GENERIC_SECONDARY_DIRENT
+)
