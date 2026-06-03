@@ -29,6 +29,7 @@ class FatType(Enum):
     FAT16 = auto()
     FAT32 = auto()
     EXFAT = auto()
+    FATX = auto()
 
 
 class FS:
