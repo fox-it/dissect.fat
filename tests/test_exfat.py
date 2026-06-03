@@ -3,8 +3,8 @@ from __future__ import annotations
 import datetime
 from typing import BinaryIO
 
+from dissect.fat.base import FatType
 from dissect.fat.exfat import ExFAT
-from dissect.fat.util import FatType
 
 
 def test_exfat_4m(exfat_4m: BinaryIO) -> None:

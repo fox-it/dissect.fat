@@ -4,173 +4,213 @@ from typing import BinaryIO, Literal, TypeAlias, overload
 import dissect.cstruct as __cs__
 
 class _c_fat(__cs__.cstruct):
-    ATTR_READ_ONLY: Literal[1] = ...
-    ATTR_HIDDEN: Literal[2] = ...
-    ATTR_SYSTEM: Literal[4] = ...
-    ATTR_VOLUME_ID: Literal[8] = ...
-    ATTR_DIRECTORY: Literal[16] = ...
-    ATTR_ARCHIVE: Literal[32] = ...
-    ATTR_LONG_NAME: Literal[15] = ...
-    ATTR_LONG_NAME_MASK: Literal[63] = ...
-    LAST_LONG_ENTRY: Literal[64] = ...
-
-    class Bpb(__cs__.Structure):
-        BS_jmpBoot: __cs__.Array[_c_fat.uint8]
-        BS_OEMName: __cs__.Array[_c_fat.uint8]
-        BPB_BytsPerSec: _c_fat.uint16
-        BPB_SecPerClus: _c_fat.uint8
-        BPB_RsvdSecCnt: _c_fat.uint16
-        BPB_NumFATs: _c_fat.uint8
-        BPB_RootEntCnt: _c_fat.uint16
-        BPB_TotSec16: _c_fat.uint16
-        BPB_Media: _c_fat.uint8
-        BPB_FATSz16: _c_fat.uint16
-        BPB_SecPerTrk: _c_fat.uint16
-        BPB_NumHeads: _c_fat.uint16
-        BPB_HiddSec: _c_fat.uint32
-        BPB_TotSec32: _c_fat.uint32
+    FAT_DIRENT_NEVER_USED: Literal[0] = ...
+    FAT_DIRENT_REALLY_0E5: Literal[5] = ...
+    FAT_DIRENT_DIRECTORY_ALIAS: Literal[46] = ...
+    FAT_DIRENT_DELETED: Literal[229] = ...
+    FAT_DIRENT_ATTR_READ_ONLY: Literal[1] = ...
+    FAT_DIRENT_ATTR_HIDDEN: Literal[2] = ...
+    FAT_DIRENT_ATTR_SYSTEM: Literal[4] = ...
+    FAT_DIRENT_ATTR_VOLUME_ID: Literal[8] = ...
+    FAT_DIRENT_ATTR_DIRECTORY: Literal[16] = ...
+    FAT_DIRENT_ATTR_ARCHIVE: Literal[32] = ...
+    FAT_DIRENT_ATTR_DEVICE: Literal[64] = ...
+    FAT_DIRENT_ATTR_LFN: Literal[15] = ...
+    FAT_LAST_LONG_ENTRY: Literal[64] = ...
+    class _BIOS_PARAMETER_BLOCK(__cs__.Structure):
+        BytesPerSector: _c_fat.uint16
+        SectorsPerCluster: _c_fat.int8
+        ReservedSectors: _c_fat.uint16
+        Fats: _c_fat.uint8
+        RootEntries: _c_fat.uint16
+        Sectors: _c_fat.uint16
+        Media: _c_fat.uint8
+        SectorsPerFat: _c_fat.uint16
+        SectorsPerTrack: _c_fat.uint16
+        Heads: _c_fat.uint16
+        HiddenSectors: _c_fat.uint32
+        LargeSectors: _c_fat.uint32
         @overload
         def __init__(
             self,
-            BS_jmpBoot: __cs__.Array[_c_fat.uint8] | None = ...,
-            BS_OEMName: __cs__.Array[_c_fat.uint8] | None = ...,
-            BPB_BytsPerSec: _c_fat.uint16 | None = ...,
-            BPB_SecPerClus: _c_fat.uint8 | None = ...,
-            BPB_RsvdSecCnt: _c_fat.uint16 | None = ...,
-            BPB_NumFATs: _c_fat.uint8 | None = ...,
-            BPB_RootEntCnt: _c_fat.uint16 | None = ...,
-            BPB_TotSec16: _c_fat.uint16 | None = ...,
-            BPB_Media: _c_fat.uint8 | None = ...,
-            BPB_FATSz16: _c_fat.uint16 | None = ...,
-            BPB_SecPerTrk: _c_fat.uint16 | None = ...,
-            BPB_NumHeads: _c_fat.uint16 | None = ...,
-            BPB_HiddSec: _c_fat.uint32 | None = ...,
-            BPB_TotSec32: _c_fat.uint32 | None = ...,
+            BytesPerSector: _c_fat.uint16 | None = ...,
+            SectorsPerCluster: _c_fat.int8 | None = ...,
+            ReservedSectors: _c_fat.uint16 | None = ...,
+            Fats: _c_fat.uint8 | None = ...,
+            RootEntries: _c_fat.uint16 | None = ...,
+            Sectors: _c_fat.uint16 | None = ...,
+            Media: _c_fat.uint8 | None = ...,
+            SectorsPerFat: _c_fat.uint16 | None = ...,
+            SectorsPerTrack: _c_fat.uint16 | None = ...,
+            Heads: _c_fat.uint16 | None = ...,
+            HiddenSectors: _c_fat.uint32 | None = ...,
+            LargeSectors: _c_fat.uint32 | None = ...,
         ): ...
         @overload
         def __init__(self, fh: bytes | memoryview | bytearray | BinaryIO, /): ...
 
-    class Bpb16(__cs__.Structure):
-        BS_DrvNum: _c_fat.uint8
-        BS_Reserved1: _c_fat.uint8
-        BS_BootSig: _c_fat.uint8
-        BS_VolID: _c_fat.uint32
-        BS_VolLab: __cs__.Array[_c_fat.uint8]
-        BS_FilSysType: __cs__.Array[_c_fat.uint8]
+    BIOS_PARAMETER_BLOCK: TypeAlias = _BIOS_PARAMETER_BLOCK
+    class _BIOS_PARAMETER_BLOCK_EX(__cs__.Structure):
+        BytesPerSector: _c_fat.uint16
+        SectorsPerCluster: _c_fat.int8
+        ReservedSectors: _c_fat.uint16
+        Fats: _c_fat.uint8
+        RootEntries: _c_fat.uint16
+        Sectors: _c_fat.uint16
+        Media: _c_fat.uint8
+        SectorsPerFat: _c_fat.uint16
+        SectorsPerTrack: _c_fat.uint16
+        Heads: _c_fat.uint16
+        HiddenSectors: _c_fat.uint32
+        LargeSectors: _c_fat.uint32
+        LargeSectorsPerFat: _c_fat.uint32
+        ExtendedFlags: _c_fat.uint16
+        FsVersion: _c_fat.uint16
+        RootDirFirstCluster: _c_fat.uint32
+        FsInfoSector: _c_fat.uint16
+        BackupBootSector: _c_fat.uint16
+        Reserved: __cs__.Array[_c_fat.uint8]
         @overload
         def __init__(
             self,
-            BS_DrvNum: _c_fat.uint8 | None = ...,
-            BS_Reserved1: _c_fat.uint8 | None = ...,
-            BS_BootSig: _c_fat.uint8 | None = ...,
-            BS_VolID: _c_fat.uint32 | None = ...,
-            BS_VolLab: __cs__.Array[_c_fat.uint8] | None = ...,
-            BS_FilSysType: __cs__.Array[_c_fat.uint8] | None = ...,
+            BytesPerSector: _c_fat.uint16 | None = ...,
+            SectorsPerCluster: _c_fat.int8 | None = ...,
+            ReservedSectors: _c_fat.uint16 | None = ...,
+            Fats: _c_fat.uint8 | None = ...,
+            RootEntries: _c_fat.uint16 | None = ...,
+            Sectors: _c_fat.uint16 | None = ...,
+            Media: _c_fat.uint8 | None = ...,
+            SectorsPerFat: _c_fat.uint16 | None = ...,
+            SectorsPerTrack: _c_fat.uint16 | None = ...,
+            Heads: _c_fat.uint16 | None = ...,
+            HiddenSectors: _c_fat.uint32 | None = ...,
+            LargeSectors: _c_fat.uint32 | None = ...,
+            LargeSectorsPerFat: _c_fat.uint32 | None = ...,
+            ExtendedFlags: _c_fat.uint16 | None = ...,
+            FsVersion: _c_fat.uint16 | None = ...,
+            RootDirFirstCluster: _c_fat.uint32 | None = ...,
+            FsInfoSector: _c_fat.uint16 | None = ...,
+            BackupBootSector: _c_fat.uint16 | None = ...,
+            Reserved: __cs__.Array[_c_fat.uint8] | None = ...,
         ): ...
         @overload
         def __init__(self, fh: bytes | memoryview | bytearray | BinaryIO, /): ...
 
-    class Bpb32(__cs__.Structure):
-        BPB_FATSz32: _c_fat.uint32
-        BPB_ExtFlags: _c_fat.uint16
-        BPB_FSVer: _c_fat.uint16
-        BPB_RootClus: _c_fat.uint32
-        BPB_FSInfo: _c_fat.uint16
-        BPB_BkBootSec: _c_fat.uint16
-        BPB_Reserved: __cs__.Array[_c_fat.uint8]
-        BS_DrvNum: _c_fat.uint8
-        BS_Reserved1: _c_fat.uint8
-        BS_BootSig: _c_fat.uint8
-        BS_VolID: _c_fat.uint32
-        BS_VolLab: __cs__.Array[_c_fat.uint8]
-        BS_FilSysType: __cs__.Array[_c_fat.uint8]
+    BIOS_PARAMETER_BLOCK_EX: TypeAlias = _BIOS_PARAMETER_BLOCK_EX
+    class _BOOT_SECTOR(__cs__.Structure):
+        Jump: __cs__.Array[_c_fat.uint8]
+        Oem: __cs__.Array[_c_fat.uint8]
+        Bpb: _c_fat._BIOS_PARAMETER_BLOCK
+        PhysicalDriveNumber: _c_fat.uint8
+        CurrentHead: _c_fat.uint8
+        Signature: _c_fat.uint8
+        Id: _c_fat.uint32
+        VolumeLabel: __cs__.Array[_c_fat.uint8]
+        SystemId: __cs__.Array[_c_fat.uint8]
         @overload
         def __init__(
             self,
-            BPB_FATSz32: _c_fat.uint32 | None = ...,
-            BPB_ExtFlags: _c_fat.uint16 | None = ...,
-            BPB_FSVer: _c_fat.uint16 | None = ...,
-            BPB_RootClus: _c_fat.uint32 | None = ...,
-            BPB_FSInfo: _c_fat.uint16 | None = ...,
-            BPB_BkBootSec: _c_fat.uint16 | None = ...,
-            BPB_Reserved: __cs__.Array[_c_fat.uint8] | None = ...,
-            BS_DrvNum: _c_fat.uint8 | None = ...,
-            BS_Reserved1: _c_fat.uint8 | None = ...,
-            BS_BootSig: _c_fat.uint8 | None = ...,
-            BS_VolID: _c_fat.uint32 | None = ...,
-            BS_VolLab: __cs__.Array[_c_fat.uint8] | None = ...,
-            BS_FilSysType: __cs__.Array[_c_fat.uint8] | None = ...,
+            Jump: __cs__.Array[_c_fat.uint8] | None = ...,
+            Oem: __cs__.Array[_c_fat.uint8] | None = ...,
+            Bpb: _c_fat._BIOS_PARAMETER_BLOCK | None = ...,
+            PhysicalDriveNumber: _c_fat.uint8 | None = ...,
+            CurrentHead: _c_fat.uint8 | None = ...,
+            Signature: _c_fat.uint8 | None = ...,
+            Id: _c_fat.uint32 | None = ...,
+            VolumeLabel: __cs__.Array[_c_fat.uint8] | None = ...,
+            SystemId: __cs__.Array[_c_fat.uint8] | None = ...,
         ): ...
         @overload
         def __init__(self, fh: bytes | memoryview | bytearray | BinaryIO, /): ...
 
-    class Dirent(__cs__.Structure):
-        DIR_Name: __cs__.Array[_c_fat.uint8]
-        DIR_Attr: _c_fat.uint8
-        DIR_NTRes: _c_fat.uint8
-        DIR_CrtTimeTenth: _c_fat.uint8
-        DIR_CrtTime: _c_fat.uint16
-        DIR_CrtDate: _c_fat.uint16
-        DIR_LstAccDate: _c_fat.uint16
-        DIR_FstClusHI: _c_fat.uint16
-        DIR_WrtTime: _c_fat.uint16
-        DIR_WrtDate: _c_fat.uint16
-        DIR_FstClusLO: _c_fat.uint16
-        DIR_FileSize: _c_fat.uint32
+    BOOT_SECTOR: TypeAlias = _BOOT_SECTOR
+    class _BOOT_SECTOR_EX(__cs__.Structure):
+        Jump: __cs__.Array[_c_fat.uint8]
+        Oem: __cs__.Array[_c_fat.uint8]
+        Bpb: _c_fat._BIOS_PARAMETER_BLOCK_EX
+        PhysicalDriveNumber: _c_fat.uint8
+        CurrentHead: _c_fat.uint8
+        Signature: _c_fat.uint8
+        Id: _c_fat.uint32
+        VolumeLabel: __cs__.Array[_c_fat.uint8]
+        SystemId: __cs__.Array[_c_fat.uint8]
         @overload
         def __init__(
             self,
-            DIR_Name: __cs__.Array[_c_fat.uint8] | None = ...,
-            DIR_Attr: _c_fat.uint8 | None = ...,
-            DIR_NTRes: _c_fat.uint8 | None = ...,
-            DIR_CrtTimeTenth: _c_fat.uint8 | None = ...,
-            DIR_CrtTime: _c_fat.uint16 | None = ...,
-            DIR_CrtDate: _c_fat.uint16 | None = ...,
-            DIR_LstAccDate: _c_fat.uint16 | None = ...,
-            DIR_FstClusHI: _c_fat.uint16 | None = ...,
-            DIR_WrtTime: _c_fat.uint16 | None = ...,
-            DIR_WrtDate: _c_fat.uint16 | None = ...,
-            DIR_FstClusLO: _c_fat.uint16 | None = ...,
-            DIR_FileSize: _c_fat.uint32 | None = ...,
+            Jump: __cs__.Array[_c_fat.uint8] | None = ...,
+            Oem: __cs__.Array[_c_fat.uint8] | None = ...,
+            Bpb: _c_fat._BIOS_PARAMETER_BLOCK_EX | None = ...,
+            PhysicalDriveNumber: _c_fat.uint8 | None = ...,
+            CurrentHead: _c_fat.uint8 | None = ...,
+            Signature: _c_fat.uint8 | None = ...,
+            Id: _c_fat.uint32 | None = ...,
+            VolumeLabel: __cs__.Array[_c_fat.uint8] | None = ...,
+            SystemId: __cs__.Array[_c_fat.uint8] | None = ...,
         ): ...
         @overload
         def __init__(self, fh: bytes | memoryview | bytearray | BinaryIO, /): ...
 
-    class Ldirent(__cs__.Structure):
-        LDIR_Ord: _c_fat.uint8
-        LDIR_Name1: __cs__.Array[_c_fat.uint8]
-        LDIR_Attr: _c_fat.uint8
-        LDIR_Type: _c_fat.uint8
-        LDIR_Chksum: _c_fat.uint8
-        LDIR_Name2: __cs__.Array[_c_fat.uint8]
-        LDIR_FstClusLO: _c_fat.uint16
-        LDIR_Name3: __cs__.Array[_c_fat.uint8]
+    BOOT_SECTOR_EX: TypeAlias = _BOOT_SECTOR_EX
+    class _DIRENT(__cs__.Structure):
+        FileName: __cs__.Array[_c_fat.uint8]
+        Attributes: _c_fat.uint8
+        NtByte: _c_fat.uint8
+        CreationMSec: _c_fat.uint8
+        CreationTime: _c_fat.uint16
+        CreationDate: _c_fat.uint16
+        LastAccessDate: _c_fat.uint16
+        ExtendedAttributes: _c_fat.uint16
+        FirstClusterOfFileHi: _c_fat.uint16
+        LastWriteTime: _c_fat.uint16
+        LastWriteDate: _c_fat.uint16
+        FirstClusterOfFile: _c_fat.uint16
+        FileSize: _c_fat.uint32
         @overload
         def __init__(
             self,
-            LDIR_Ord: _c_fat.uint8 | None = ...,
-            LDIR_Name1: __cs__.Array[_c_fat.uint8] | None = ...,
-            LDIR_Attr: _c_fat.uint8 | None = ...,
-            LDIR_Type: _c_fat.uint8 | None = ...,
-            LDIR_Chksum: _c_fat.uint8 | None = ...,
-            LDIR_Name2: __cs__.Array[_c_fat.uint8] | None = ...,
-            LDIR_FstClusLO: _c_fat.uint16 | None = ...,
-            LDIR_Name3: __cs__.Array[_c_fat.uint8] | None = ...,
+            FileName: __cs__.Array[_c_fat.uint8] | None = ...,
+            Attributes: _c_fat.uint8 | None = ...,
+            NtByte: _c_fat.uint8 | None = ...,
+            CreationMSec: _c_fat.uint8 | None = ...,
+            CreationTime: _c_fat.uint16 | None = ...,
+            CreationDate: _c_fat.uint16 | None = ...,
+            LastAccessDate: _c_fat.uint16 | None = ...,
+            ExtendedAttributes: _c_fat.uint16 | None = ...,
+            FirstClusterOfFileHi: _c_fat.uint16 | None = ...,
+            LastWriteTime: _c_fat.uint16 | None = ...,
+            LastWriteDate: _c_fat.uint16 | None = ...,
+            FirstClusterOfFile: _c_fat.uint16 | None = ...,
+            FileSize: _c_fat.uint32 | None = ...,
         ): ...
         @overload
         def __init__(self, fh: bytes | memoryview | bytearray | BinaryIO, /): ...
+
+    DIRENT: TypeAlias = _DIRENT
+    class _LFN_DIRENT(__cs__.Structure):
+        Ordinal: _c_fat.uint8
+        Name1: __cs__.Array[_c_fat.uint8]
+        Attributes: _c_fat.uint8
+        Type: _c_fat.uint8
+        Checksum: _c_fat.uint8
+        Name2: __cs__.Array[_c_fat.uint8]
+        MustBeZero: _c_fat.uint16
+        Name3: __cs__.Array[_c_fat.uint8]
+        @overload
+        def __init__(
+            self,
+            Ordinal: _c_fat.uint8 | None = ...,
+            Name1: __cs__.Array[_c_fat.uint8] | None = ...,
+            Attributes: _c_fat.uint8 | None = ...,
+            Type: _c_fat.uint8 | None = ...,
+            Checksum: _c_fat.uint8 | None = ...,
+            Name2: __cs__.Array[_c_fat.uint8] | None = ...,
+            MustBeZero: _c_fat.uint16 | None = ...,
+            Name3: __cs__.Array[_c_fat.uint8] | None = ...,
+        ): ...
+        @overload
+        def __init__(self, fh: bytes | memoryview | bytearray | BinaryIO, /): ...
+
+    LFN_DIRENT: TypeAlias = _LFN_DIRENT
 
 # Technically `c_fat` is an instance of `_c_fat`, but then we can't use it in type hints
 c_fat: TypeAlias = _c_fat
-
-VALID_BPB_MEDIA: set[
-    Literal[240],
-    Literal[248],
-    Literal[249],
-    Literal[250],
-    Literal[251],
-    Literal[252],
-    Literal[253],
-    Literal[254],
-    Literal[255],
-] = ...
