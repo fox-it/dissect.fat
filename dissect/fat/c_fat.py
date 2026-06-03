@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dissect.cstruct import cstruct
 
-# fastfat/fat.h, fastfat/lfn.h
+# https://github.com/microsoft/Windows-driver-samples/blob/main/filesys/fastfat/fat.h
 fat_def = """
 typedef struct _BIOS_PARAMETER_BLOCK {
     USHORT  BytesPerSector;             /* bytes per sector (512, 1k, 2k, 4k) */
