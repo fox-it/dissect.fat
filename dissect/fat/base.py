@@ -14,8 +14,10 @@ from dissect.fat.c_fat import c_fat
 from dissect.fat.exception import (
     BadClusterError,
     DeletedDirectoryError,
+    FileNotFoundError,
     FreeClusterError,
     LastEmptyDirectoryError,
+    NotADirectoryError,
 )
 
 if TYPE_CHECKING:
