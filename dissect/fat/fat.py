@@ -4,464 +4,361 @@
 # - https://download.microsoft.com/download/1/6/1/161ba512-40e2-4cc9-843a-923143f3456c/fatgen103.doc
 from __future__ import annotations
 
-import datetime
-import struct
-from functools import lru_cache, reduce
-from operator import itemgetter
-from typing import TYPE_CHECKING, BinaryIO
+from functools import cached_property
+from typing import TYPE_CHECKING
 
-from dissect.util.stream import RangeStream, RunlistStream
+from dissect.util.stream import RangeStream
 from dissect.util.ts import dostimestamp
 
-from dissect.fat.c_fat import (
-    BAD_CLUSTER,
-    DATA_CLUSTER_MAX,
-    DATA_CLUSTER_MIN,
-    END_OF_CLUSTER_MAX,
-    END_OF_CLUSTER_MIN,
-    FAT12_EOC,
-    FREE_CLUSTER,
-    VALID_BPB_MEDIA,
-    Fattype,
-    c_fat,
-)
-from dissect.fat.exceptions import (
-    BadClusterError,
-    EmptyDirectoryError,
-    FileNotFoundError,
-    FreeClusterError,
-    InvalidBPB,
+from dissect.fat.base import FAT, FS, BaseDirectoryEntry, FatType, iter_dirent
+from dissect.fat.c_fat import c_fat
+from dissect.fat.exception import (
+    DeletedDirectoryError,
+    InvalidBootSector,
     InvalidDirectoryError,
     LastEmptyDirectoryError,
-    NotADirectoryError,
 )
 
 if TYPE_CHECKING:
+    import datetime
     from collections.abc import Iterator
+    from typing import BinaryIO
+
+    from dissect.util.stream import RunlistStream
 
 
-class FATFS:
+class FATFS(FS):
+    """FAT filesystem implementation supporting FAT12, FAT16 and FAT32.
+
+    Automatically detects FAT type based on BPB.
+
+    Args:
+        fh: File-like object containing the FAT filesystem.
+        encoding: Encoding to use for decoding file names. Defaults to "ibm437".
+    """
+
     def __init__(self, fh: BinaryIO, encoding: str = "ibm437"):
         self.fh = fh
         self.encoding = encoding
 
         fh.seek(0)
-        sector = fh.read(512)
-        bpb_size = len(c_fat.Bpb)
-        self.bpb = c_fat.Bpb(sector[:bpb_size])
-        bpb16 = c_fat.Bpb16(sector[bpb_size:])
-        bpb32 = c_fat.Bpb32(sector[bpb_size:])
+        buf = fh.read(512)
+        self.boot_sector = c_fat._BOOT_SECTOR(buf)
+        if self.boot_sector.Bpb.SectorsPerFat == 0:
+            self.boot_sector = c_fat._BOOT_SECTOR_EX(buf)
 
-        validate_bpb(self.bpb)
+        validate_boot_sector(self.boot_sector)
 
-        self.fat_size = self.bpb.BPB_FATSz16 or bpb32.BPB_FATSz32
-        self.total_sectors = self.bpb.BPB_TotSec16 or self.bpb.BPB_TotSec32
+        bpb = self.boot_sector.Bpb
+        self.fat_size = bpb.SectorsPerFat or bpb.LargeSectorsPerFat
+        self.total_sectors = bpb.Sectors or bpb.LargeSectors
+
+        self.sector_size = bpb.BytesPerSector
+        self.cluster_size = bpb.BytesPerSector * bpb.SectorsPerCluster
 
         # Taken from FAT32 spec
-        root_dir_sectors = ((self.bpb.BPB_RootEntCnt * 32) + (self.bpb.BPB_BytsPerSec - 1)) // self.bpb.BPB_BytsPerSec
-        self.first_data_sector = self.bpb.BPB_RsvdSecCnt + (self.bpb.BPB_NumFATs * self.fat_size) + root_dir_sectors
+        root_dir_sectors = ((bpb.RootEntries * 32) + (self.sector_size - 1)) // self.sector_size
+        self.first_data_sector = bpb.ReservedSectors + (bpb.Fats * self.fat_size) + root_dir_sectors
 
         data_sec = self.total_sectors - self.first_data_sector
-        count_of_clusters = data_sec // self.bpb.BPB_SecPerClus
+        count_of_clusters = data_sec // bpb.SectorsPerCluster
         if count_of_clusters < 4085:
-            self.type = Fattype.FAT12
-            self.bpb_ext = bpb16
+            self.__class__ = FAT12
+            self.type = FatType.FAT12
+            bits_per_entry = 12
         elif count_of_clusters < 65525:
-            self.type = Fattype.FAT16
-            self.bpb_ext = bpb16
+            self.__class__ = FAT16
+            self.type = FatType.FAT16
+            bits_per_entry = 16
         else:
-            self.type = Fattype.FAT32
-            self.bpb_ext = bpb32
-
-        self.sector_size = self.bpb.BPB_BytsPerSec
-        self.cluster_size = self.bpb.BPB_BytsPerSec * self.bpb.BPB_SecPerClus
+            self.__class__ = FAT32
+            self.type = FatType.FAT32
+            # Yes, FAT32 actually only uses 28 bits for cluster numbers
+            bits_per_entry = 28
 
         # FAT starts after reserved sectors
         # Only parse the first FAT for now
         fat_stream = RangeStream(
             fh,
-            self.bpb.BPB_RsvdSecCnt * self.sector_size,
+            bpb.ReservedSectors * self.sector_size,
             self.fat_size * self.sector_size,
         )
-        self.fat = FAT(fat_stream, self.type)
-        self.data_stream = RangeStream(fh, self.first_data_sector * self.sector_size, data_sec * self.sector_size)
+        self.fat = FAT(fat_stream, fat_stream.size, bits_per_entry)
+        self.data = RangeStream(fh, self.first_data_sector * self.sector_size, data_sec * self.sector_size)
 
-        # volume label with stripped padding
-        self.volume_label = bytes(self.bpb_ext.BS_VolLab).strip(b"\x20").decode(encoding)
+        # Volume label with stripped padding
+        self.volume_label = bytes(self.boot_sector.VolumeLabel).strip(b"\x20").decode(encoding)
 
-        # volume serial number, hex encoded
-        self.volume_id = f"{self.bpb_ext.BS_VolID:x}"
+        # Volume serial number, hex encoded
+        self.volume_id = f"{self.boot_sector.Id:x}"
 
         self.root = RootDirectory(self)
 
-    def get(self, path: str, dirent: DirectoryEntry | RootDirectory | None = None) -> DirectoryEntry | RootDirectory:
-        dirent = dirent if dirent else self.root
-
-        # Programmatically we will often use the `/` separator, so replace it with the native path separator of FAT
-        # `/` is an illegal character in FAT filenames, so it's safe to replace
-        parts = path.replace("/", "\\").split("\\")
-        for part in parts:
-            if not part:
-                continue
-
-            if dirent is self.root and part in (".", ".."):
-                continue
-
-            part_upper = part.upper()
-            for child in dirent.iterdir():
-                if part_upper in (child.name.upper(), child.short_name.upper()):
-                    dirent = child
-                    break
-            else:
-                raise FileNotFoundError(f"File not found: {path}")
-
-        return dirent
+    def _match(self, name: str, dirent: DirectoryEntry) -> bool:
+        return name in (dirent.long_name.upper(), dirent.short_name.upper())
 
 
-def validate_bpb(bpb: c_fat.Bpb | bytes) -> None:
-    if isinstance(bpb, bytes):
-        bpb = c_fat.Bpb(bpb[: len(c_fat.Bpb)])
+class FAT12(FATFS):
+    """FAT12 filesystem implementation.
 
-    # Detect a valid x86 JMP opcode
-    if not (bpb.BS_jmpBoot[0] == 0xEB and bpb.BS_jmpBoot[2] == 0x90) and bpb.BS_jmpBoot[0] != 0xE9:
-        raise InvalidBPB(f"Invalid BS_jmpBoot: {bytes(bpb.BS_jmpBoot)!r}")
+    Enforces that the BPB indicates a FAT12 filesystem.
 
-    if bpb.BPB_BytsPerSec not in [2**x for x in range(9, 13)]:
-        raise InvalidBPB(f"Invalid BPB_BytsPerSec: 0x{bpb.BPB_BytsPerSec:x}")
+    Args:
+        fh: File-like object containing the FAT filesystem.
+        encoding: Encoding to use for decoding file names. Defaults to "ibm437".
+    """
 
-    if bpb.BPB_SecPerClus not in [2**x for x in range(8)]:
-        raise InvalidBPB(f"Invalid BPB_SecPerClus: 0x{bpb.BPB_SecPerClus:x}")
-
-    if bpb.BPB_RsvdSecCnt == 0:
-        raise InvalidBPB(f"Invalid BPB_RsvdSecCnt, must not be 0: 0x{bpb.BPB_RsvdSecCnt:x}")
-
-    if bpb.BPB_Media not in VALID_BPB_MEDIA:
-        raise InvalidBPB(f"Invalid BPB_Media: 0x{bpb.BPB_Media:x}")
-
-    if bpb.BPB_NumFATs < 1:
-        raise InvalidBPB(f"Invalid BPB_NumFATs, must be at least 1: 0x{bpb.BPB_NumFATs:x}")
-
-    root_entry_count = bpb.BPB_RootEntCnt * 32
-    root_entry_count %= bpb.BPB_BytsPerSec
-    if bpb.BPB_RootEntCnt != 0 and root_entry_count != 0:
-        raise InvalidBPB("Root entry count does not align with bytes per sector")
-
-    if bpb.BPB_TotSec16 == 0 and bpb.BPB_TotSec32 == 0:
-        raise InvalidBPB(f"Invalid BPB_TotSec16 and BPB_TotSec32: 0x{bpb.BPB_TotSec16:x}, 0x{bpb.BPB_TotSec32:x}")
+    def __init__(self, fh: BinaryIO, encoding: str = "ibm437"):
+        super().__init__(fh, encoding)
+        if self.type != FatType.FAT12:
+            raise InvalidBootSector("BPB does not indicate FAT12 filesystem")
 
 
-class FAT:
-    def __init__(self, fh: BinaryIO, fattype: Fattype):
-        self.fh = fh
+class FAT16(FATFS):
+    """FAT16 filesystem implementation.
 
-        if fattype == Fattype.FAT12:
-            self.bits_per_entry = 12
-        elif fattype == Fattype.FAT16:
-            self.bits_per_entry = 16
-        elif fattype == Fattype.FAT32:
-            self.bits_per_entry = 32
-        else:
-            raise TypeError("Unsupported FAT type")
+    Enforces that the BPB indicates a FAT16 filesystem.
 
-        self.entry_count = int(self.fh.size // (self.bits_per_entry / 8))
+    Args:
+        fh: File-like object containing the FAT filesystem.
+        encoding: Encoding to use for decoding file names. Defaults to "ibm437".
+    """
 
-        self.get = lru_cache(4096)(self.get)
+    def __init__(self, fh: BinaryIO, encoding: str = "ibm437"):
+        super().__init__(fh, encoding)
+        if self.type != FatType.FAT16:
+            raise InvalidBootSector("BPB does not indicate FAT16 filesystem")
 
-    def get(self, cluster: int) -> int | None:
-        if cluster >= self.entry_count:
-            raise ValueError(f"Cluster exceeds FAT entry count: {cluster} >= {self.entry_count}")
 
-        if self.bits_per_entry == 12:
-            offset_in_fat = cluster + (cluster // 2)
-            self.fh.seek(offset_in_fat)
-            value = struct.unpack("<H", self.fh.read(2))[0]
+class FAT32(FATFS):
+    """FAT32 filesystem implementation.
 
-            return value >> 4 if cluster & 1 else value & 0x0FFF
+    Enforces that the BPB indicates a FAT32 filesystem.
 
-        if self.bits_per_entry == 16:
-            offset_in_fat = cluster * 2
-            self.fh.seek(offset_in_fat)
-            return struct.unpack("<H", self.fh.read(2))[0]
+    Args:
+        fh: File-like object containing the FAT filesystem.
+        encoding: Encoding to use for decoding file names. Defaults to "ibm437".
+    """
 
-        if self.bits_per_entry == 32:
-            offset_in_fat = cluster * 4
-            self.fh.seek(offset_in_fat)
-            return struct.unpack("<I", self.fh.read(4))[0] & 0x0FFFFFFF  # FAT32 clusters are 28 bits
+    def __init__(self, fh: BinaryIO, encoding: str = "ibm437"):
+        super().__init__(fh, encoding)
+        if self.type != FatType.FAT32:
+            raise InvalidBootSector("BPB does not indicate FAT32 filesystem")
 
-        raise ValueError("Unsupported FAT type")
 
-    def chain(self, cluster: int) -> Iterator[int]:
-        bits = self.bits_per_entry
-        while True:
-            value = self.get(cluster)
+class DirectoryEntry(BaseDirectoryEntry):
+    """FAT directory entry implementation.
 
-            if DATA_CLUSTER_MIN <= value <= mask(DATA_CLUSTER_MAX, bits):
-                yield cluster
+    Args:
+        fs: The FAT filesystem this directory entry belongs to.
+        fh: File-like object positioned at the start of the directory entry to read.
+    """
 
-            # FAT12 special EOC
-            if self.bits_per_entry == 12 and value == FAT12_EOC:
-                yield cluster
-                break
+    fs: FATFS
+    dirent: c_fat.DIRENT
+    secondary_dirents: list[c_fat.LFN_DIRENT]
 
-            if mask(END_OF_CLUSTER_MIN, bits) <= value <= mask(END_OF_CLUSTER_MAX, bits):
-                yield cluster
-                break
+    def _read_dirent(self, fh: BinaryIO) -> tuple[c_fat.DIRENT, list[c_fat.LFN_DIRENT]]:
+        """Read a directory entry from the given file handle, handling long file name entries if present.
 
-            if value == mask(BAD_CLUSTER, bits):
-                raise BadClusterError(cluster)
+        Args:
+            fh: File-like object positioned at the start of the directory entry to read.
 
-            if value == FREE_CLUSTER:
-                raise FreeClusterError(cluster)
-
-            cluster = value
-
-    def runlist(self, cluster: int) -> Iterator[tuple[int, int]]:
-        """Create a runlist from a cluster chain.
-
-        First two clusters are reserved, so substract those.
-        Also combine consecutive clusters for a more efficient runlist.
+        Returns:
+            A tuple containing the directory entry and a list of long directory entries.
         """
-        chain = self.chain(cluster)
-
-        run_start = next(chain) - 2
-        run_size = 1
-
-        for cl in chain:
-            if cl == run_start + run_size:
-                run_size += 1
-            else:
-                yield (run_start, run_size)
-                run_start = cl - 2
-                run_size = 1
-        else:
-            yield (run_start, run_size)
-
-
-class DirectoryEntry:
-    def __init__(self, fs: FATFS, fh: BinaryIO, parent: DirectoryEntry | RootDirectory | None = None):
-        self.fs = fs
-        self.parent = parent
-
-        self.dirent = None
-        self.ldirents = []
-
-        self.name = None
-        self.short_name = None
-
         buf = fh.read(32)
-        dirent = c_fat.Dirent(buf)
+        dirent = c_fat.DIRENT(buf)
+        ldirents = []
 
-        if dirent.DIR_Name[0] == 0xE5:
-            raise EmptyDirectoryError("Dirent is an empty entry")
+        if dirent.FileName[0] == c_fat.FAT_DIRENT_DELETED:
+            raise DeletedDirectoryError("Dirent is marked as deleted")
 
-        if dirent.DIR_Name[0] == 0x0:
+        if dirent.FileName[0] == c_fat.FAT_DIRENT_NEVER_USED:
             raise LastEmptyDirectoryError("Dirent is the last empty entry")
 
-        if dirent.DIR_Attr & c_fat.ATTR_LONG_NAME_MASK == c_fat.ATTR_LONG_NAME:
-            ldirent = c_fat.Ldirent(buf)
+        if dirent.Attributes == c_fat.FAT_DIRENT_ATTR_LFN:
+            ldirent = c_fat.LFN_DIRENT(buf)
             found_last = False
-            while ldirent.LDIR_Attr == c_fat.ATTR_LONG_NAME:
-                self.ldirents.append(ldirent)
-                if ldirent.LDIR_Ord & c_fat.LAST_LONG_ENTRY:
+            while ldirent.Attributes == c_fat.FAT_DIRENT_ATTR_LFN:
+                ldirents.append(ldirent)
+                if ldirent.Ordinal & c_fat.FAT_LAST_LONG_ENTRY:
                     if found_last:
                         raise InvalidDirectoryError("Dirent contains multiple last-long entries")
                     found_last = True
 
                 buf = fh.read(32)
-                ldirent = c_fat.Ldirent(buf)
+                ldirent = c_fat.LFN_DIRENT(buf)
 
-            self.dirent = c_fat.Dirent(buf)
+            return c_fat.DIRENT(buf), ldirents
 
-            self.ldirents.sort(key=lambda e: e.LDIR_Ord & 0x3F)
-            name_map = (e.LDIR_Name1 + e.LDIR_Name2 + e.LDIR_Name3 for e in self.ldirents)
-            name_reduce = bytes(reduce(lambda a, b: a + b, name_map))
-            self.name = c_fat.wchar[None](name_reduce + b"\x00\x00")
-        else:
-            self.dirent = dirent
+        return dirent, ldirents
 
-        dir_name = bytearray(self.dirent.DIR_Name)
+    @cached_property
+    def name(self) -> str:
+        """Return the canonical name of the directory entry."""
+        return self.long_name or self.short_name
+
+    @cached_property
+    def long_name(self) -> str | None:
+        """Construct long file name (LFN) from LDIR_Name parts."""
+        ldirents = sorted(self.secondary_dirents, key=lambda e: e.Ordinal & 0x3F)
+        name_parts = (bytes(e.Name1 + e.Name2 + e.Name3) for e in ldirents)
+        return c_fat.wchar[None](b"".join(name_parts) + b"\x00\x00")
+
+    @cached_property
+    def short_name(self) -> str:
+        """Construct short file name (SFN) from DIR_Name."""
+        dir_name = bytearray(self.dirent.FileName)
         if dir_name[0] == 0x05:
             dir_name[0] = 0xE5
 
         base = dir_name[:8].decode(self.fs.encoding).rstrip("\x00").rstrip()
         ext = dir_name[8:].decode(self.fs.encoding).rstrip("\x00").rstrip()
+        return f"{base}.{ext}" if ext else base
 
-        self.short_name = f"{base}.{ext}" if ext else base
-        if not self.name:
-            self.name = self.short_name
+    @cached_property
+    def attr(self) -> int:
+        """Return the attribute value of the directory entry."""
+        return self.dirent.Attributes
 
-        self._runlist = None
-        self._entries = None
-
-    def __repr__(self) -> str:
-        return f"<DirectoryEntry name={self.name}>"
-
-    @property
-    def path(self) -> str:
-        return "\\".join([self.parent.path if self.parent else "", self.name]).lstrip("\\")
-
-    @property
-    def size(self) -> size:
+    @cached_property
+    def size(self) -> int:
+        """Return the size of the directory entry in bytes."""
         if self.is_directory():
-            return sum(map(itemgetter(1), self.dataruns())) * self.fs.cluster_size
-        return self.dirent.DIR_FileSize
+            return super().size
 
-    @property
+        return self.dirent.FileSize
+
+    @cached_property
     def cluster(self) -> int:
-        return (self.dirent.DIR_FstClusHI << 16) | self.dirent.DIR_FstClusLO
+        """Return the starting cluster number of the directory entry."""
+        return (self.dirent.FirstClusterOfFileHi << 16) | self.dirent.FirstClusterOfFile
 
-    @property
+    @cached_property
     def ctime(self) -> datetime.datetime:
-        if self.dirent.DIR_CrtDate and self.dirent.DIR_CrtTime:
-            return dostimestamp(
-                (self.dirent.DIR_CrtDate << 16) | self.dirent.DIR_CrtTime,
-                self.dirent.DIR_CrtTimeTenth,
-            )
-        return datetime.datetime(1980, 1, 1)  # noqa: DTZ001
+        """Return the creation time of the directory entry."""
+        if self.dirent and self.dirent.CreationTime:
+            return dostimestamp(self.dirent.CreationTime, self.dirent.CreationMSec)
 
-    @property
+        return super().ctime
+
+    @cached_property
     def atime(self) -> datetime.datetime:
-        if self.dirent.DIR_LstAccDate:
-            return dostimestamp(self.dirent.DIR_LstAccDate << 16)
-        return datetime.datetime(1980, 1, 1)  # noqa: DTZ001
+        """Return the last access time of the directory entry."""
+        if self.dirent and self.dirent.LastAccessDate:
+            return dostimestamp(self.dirent.LastAccessDate << 16)
 
-    @property
+        return super().atime
+
+    @cached_property
     def mtime(self) -> datetime.datetime:
-        return dostimestamp((self.dirent.DIR_WrtDate << 16) | self.dirent.DIR_WrtTime)
+        if self.dirent and self.dirent.LastWriteTime:
+            return dostimestamp(self.dirent.LastWriteTime)
 
-    def is_readonly(self) -> bool:
-        return bool(self.dirent.DIR_Attr & c_fat.ATTR_READ_ONLY)
+        return super().mtime
 
-    def is_hidden(self) -> bool:
-        return bool(self.dirent.DIR_Attr & c_fat.ATTR_HIDDEN)
-
-    def is_system(self) -> bool:
-        return bool(self.dirent.DIR_Attr & c_fat.ATTR_SYSTEM)
-
-    def is_volume_id(self) -> bool:
-        return bool(self.dirent.DIR_Attr & c_fat.ATTR_VOLUME_ID)
-
-    def is_directory(self) -> bool:
-        return bool(self.dirent.DIR_Attr & c_fat.ATTR_DIRECTORY)
-
-    def is_archive(self) -> bool:
-        return bool(self.dirent.DIR_Attr & c_fat.ATTR_ARCHIVE)
-
-    def iterdir(self) -> Iterator[DirectoryEntry]:
-        if not self.is_directory():
-            raise NotADirectoryError(self.name)
-
-        if not self._entries:
-            entries = []
-            for entry in _iter_dirent(self.fs, self.open(), self):
-                yield entry
-                entries.append(entry)
-
-            self._entries = entries
-        else:
-            yield from self._entries
-
-    def dataruns(self) -> list[tuple[int, int]]:
-        if self._runlist is None:
-            self._runlist = [] if self.cluster == FREE_CLUSTER else list(self.fs.fat.runlist(self.cluster))
-        return self._runlist
-
-    def open(self) -> RunlistStream:
-        return RunlistStream(self.fs.data_stream, self.dataruns(), self.size, self.fs.cluster_size)
+    def _iterdir(self, fh: BinaryIO) -> Iterator[DirectoryEntry]:
+        yield from iter_dirent(DirectoryEntry, self.fs, fh)
 
 
 class RootDirectory(DirectoryEntry):
+    """Root directory implementation."""
+
     def __init__(self, fs: FATFS):
-        self.fs = fs
-        self.name = "\\"
-        self.short_name = self.name
+        super().__init__(fs, None)
 
-        self._runlist = None
-        self._entries = None
-
-    @property
-    def path(self) -> str:
+    @cached_property
+    def long_name(self) -> str:
         return ""
 
-    @property
+    @cached_property
+    def short_name(self) -> str:
+        return ""
+
+    @cached_property
+    def attr(self) -> int:
+        return c_fat.FAT_DIRENT_ATTR_DIRECTORY
+
+    @cached_property
     def size(self) -> int:
-        if self.fs.type in (Fattype.FAT12, Fattype.FAT16):
-            return self.fs.bpb.BPB_RootEntCnt * 32
-        return sum(map(itemgetter(1), self.dataruns())) * self.fs.cluster_size
+        if self.fs.type in (FatType.FAT12, FatType.FAT16):
+            return self.fs.boot_sector.Bpb.RootEntries * 32
 
-    @property
-    def cluster(self) -> int | None:
-        if self.fs.type == Fattype.FAT32:
-            return self.fs.bpb_ext.BPB_RootClus
-        return None
+        return super().size
 
-    @property
-    def ctime(self) -> datetime.datetime:
-        return datetime.datetime(1980, 1, 1)  # noqa: DTZ001
+    @cached_property
+    def cluster(self) -> int:
+        if self.fs.type == FatType.FAT32:
+            return self.fs.boot_sector.Bpb.RootDirFirstCluster
 
-    @property
-    def atime(self) -> datetime.datetime:
-        return datetime.datetime(1980, 1, 1)  # noqa: DTZ001
-
-    @property
-    def mtime(self) -> datetime.datetime:
-        return datetime.datetime(1980, 1, 1)  # noqa: DTZ001
-
-    def is_readonly(self) -> bool:
-        return False
-
-    def is_hidden(self) -> bool:
-        return False
-
-    def is_system(self) -> bool:
-        return False
-
-    def is_volume_id(self) -> bool:
-        return False
-
-    def is_directory(self) -> bool:
-        return True
-
-    def is_archive(self) -> bool:
-        return False
-
-    def iterdir(self) -> Iterator[DirectoryEntry]:
-        if not self._entries:
-            entries = []
-            for entry in _iter_dirent(self.fs, self.open(), self):
-                yield entry
-                entries.append(entry)
-
-            self._entries = entries
-        else:
-            yield from self._entries
-
-    def dataruns(self) -> list[tuple[int, int]]:
-        if self._runlist is None:
-            self._runlist = [] if self.cluster == FREE_CLUSTER else list(self.fs.fat.runlist(self.cluster))
-        return self._runlist
+        return -1
 
     def open(self) -> RangeStream | RunlistStream:
-        if self.fs.type in (Fattype.FAT12, Fattype.FAT16):
-            root_dir_sector = self.fs.bpb.BPB_RsvdSecCnt + (self.fs.fat_size * self.fs.bpb.BPB_NumFATs)
+        if self.fs.type in (FatType.FAT12, FatType.FAT16):
+            root_dir_sector = self.fs.boot_sector.Bpb.ReservedSectors + (
+                self.fs.fat_size * self.fs.boot_sector.Bpb.Fats
+            )
             offset = root_dir_sector * self.fs.sector_size
             return RangeStream(self.fs.fh, offset, self.size)
-        return RunlistStream(self.fs.data_stream, self.dataruns(), self.size, self.fs.cluster_size)
+
+        return super().open()
 
 
-def mask(v: int, bits: int) -> int:
-    return v & ((1 << bits) - 1)
+VALID_BPB_MEDIA = {0xF0, 0xF8, 0xF9, 0xFA, 0xFB, 0xFC, 0xFD, 0xFE, 0xFF}
 
 
-def _iter_dirent(
-    fs: FATFS, fh: BinaryIO, parent: DirectoryEntry | RootDirectory | None = None
-) -> Iterator[DirectoryEntry]:
-    while True:
-        try:
-            yield DirectoryEntry(fs, fh, parent)
-        except EmptyDirectoryError:  # noqa: PERF203
-            continue
-        except LastEmptyDirectoryError:
-            break
-        except EOFError:
-            break
+def validate_boot_sector(sector: c_fat.BOOT_SECTOR | bytes) -> None:
+    """Validate the boot sector according to FAT specification.
+
+    Args:
+        sector: The boot sector to validate, either as a parsed structure or as raw bytes.
+
+    Raises:
+        InvalidBootSector: If any field in the boot sector is invalid according to FAT specification.
+    """
+    if isinstance(sector, bytes):
+        sector = c_fat.BOOT_SECTOR(sector)
+
+    # Detect a valid x86 JMP opcode
+    if not (sector.Jump[0] == 0xEB and sector.Jump[2] == 0x90) and sector.Jump[0] != 0xE9:
+        raise InvalidBootSector(f"Invalid Jump: {bytes(sector.Jump)!r}")
+
+    bpb = sector.Bpb
+    if bpb.BytesPerSector not in [2**x for x in range(9, 13)]:
+        raise InvalidBootSector(f"Invalid Bpb.BytesPerSector: 0x{bpb.BytesPerSector:x}")
+
+    if bpb.SectorsPerCluster not in [2**x for x in range(8)]:
+        raise InvalidBootSector(f"Invalid Bpb.SectorsPerCluster: 0x{bpb.SectorsPerCluster:x}")
+
+    if bpb.ReservedSectors == 0:
+        raise InvalidBootSector(f"Invalid Bpb.ReservedSectors, must not be 0: 0x{bpb.ReservedSectors:x}")
+
+    if bpb.Fats < 1:
+        raise InvalidBootSector(f"Invalid Bpb.Fats, must be at least 1: 0x{bpb.Fats:x}")
+
+    if bpb.Media not in VALID_BPB_MEDIA:
+        raise InvalidBootSector(f"Invalid Bpb.Media: 0x{bpb.Media:x}")
+
+    root_entry_count = bpb.RootEntries * 32
+    root_entry_count %= bpb.BytesPerSector
+    if bpb.RootEntries != 0 and root_entry_count != 0:
+        raise InvalidBootSector("Root entry count does not align with bytes per sector")
+
+    if bpb.Sectors == 0 and bpb.LargeSectors == 0:
+        raise InvalidBootSector(f"Invalid Bpb.Sectors and Bpb.LargeSectors: 0x{bpb.Sectors:x}, 0x{bpb.LargeSectors:x}")
+
+
+def is_fat(fh: BinaryIO) -> bool:
+    """Check if the given file-like object contains a FAT filesystem by validating the BPB.
+
+    Args:
+        fh: File-like object to check.
+    """
+    fh.seek(0)
+    try:
+        validate_boot_sector(fh.read(512))
+    except InvalidBootSector:
+        return False
+    else:
+        return True

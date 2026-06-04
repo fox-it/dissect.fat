@@ -9,7 +9,7 @@ class InvalidHeaderMagic(Error):
     pass
 
 
-class InvalidBPB(Error):
+class InvalidBootSector(Error):
     pass
 
 
@@ -21,7 +21,7 @@ class FreeClusterError(Error):
     pass
 
 
-class EmptyDirectoryError(Error):
+class DeletedDirectoryError(Error):
     pass
 
 

@@ -2,107 +2,132 @@ from __future__ import annotations
 
 from dissect.cstruct import cstruct
 
-# https://ogris.de/fatrepair/fat.c
+# https://github.com/microsoft/Windows-driver-samples/blob/main/filesys/fastfat/fat.h
 fat_def = """
-#define ATTR_READ_ONLY 0x01
-#define ATTR_HIDDEN    0x02
-#define ATTR_SYSTEM    0x04
-#define ATTR_VOLUME_ID 0x08
-#define ATTR_DIRECTORY 0x10
-#define ATTR_ARCHIVE   0x20
-#define ATTR_LONG_NAME (ATTR_READ_ONLY | ATTR_HIDDEN | ATTR_SYSTEM | ATTR_VOLUME_ID)
-#define ATTR_LONG_NAME_MASK (ATTR_READ_ONLY | ATTR_HIDDEN | ATTR_SYSTEM | ATTR_VOLUME_ID | ATTR_DIRECTORY | ATTR_ARCHIVE)
+typedef struct _BIOS_PARAMETER_BLOCK {
+    USHORT  BytesPerSector;             /* bytes per sector (512, 1k, 2k, 4k) */
+    INT8    SectorsPerCluster;          /* sectors per cluster (2^n, 0<=n<=7) */
+    USHORT  ReservedSectors;            /* number of reserved sectors */
+    UCHAR   Fats;                       /* count of FATs on the volume (usually 2) */
+    USHORT  RootEntries;                /* count of root directory entries (0 if FAT32) */
+    USHORT  Sectors;                    /* total count of sectors (0 if FAT32) */
+    UCHAR   Media;                      /* media type, usally 0xf8 */
+    USHORT  SectorsPerFat;              /* sectors occupied by one fat (FAT12 / FAT16) */
+    USHORT  SectorsPerTrack;            /* sectors per track for Int 0x13 */
+    USHORT  Heads;                      /* numbers of heads for Int 0x13 */
+    ULONG   HiddenSectors;              /* count of sectors preceding the partition */
+    ULONG   LargeSectors;               /* total count of all sectors of the volume */
+} BIOS_PARAMETER_BLOCK;
 
-#define LAST_LONG_ENTRY 0x40
+typedef struct _BIOS_PARAMETER_BLOCK_EX {
+    USHORT  BytesPerSector;             /* bytes per sector (512, 1k, 2k, 4k) */
+    INT8    SectorsPerCluster;          /* sectors per cluster (2^n, 0<=n<=7) */
+    USHORT  ReservedSectors;            /* number of reserved sectors */
+    UCHAR   Fats;                       /* count of FATs on the volume (usually 2) */
+    USHORT  RootEntries;                /* count of root directory entries (0 if FAT32) */
+    USHORT  Sectors;                    /* total count of sectors (0 if FAT32) */
+    UCHAR   Media;                      /* media type, usally 0xf8 */
+    USHORT  SectorsPerFat;              /* sectors occupied by one fat (FAT12 / FAT16) */
+    USHORT  SectorsPerTrack;            /* sectors per track for Int 0x13 */
+    USHORT  Heads;                      /* numbers of heads for Int 0x13 */
+    ULONG   HiddenSectors;              /* count of sectors preceding the partition */
+    ULONG   LargeSectors;               /* total count of all sectors of the volume */
+    ULONG   LargeSectorsPerFat;         /* sectors occupied by one fat (FAT32) */
+    USHORT  ExtendedFlags;              /* FAT mirrored? */
+    USHORT  FsVersion;                  /* version number of FAT filesystem type */
+    ULONG   RootDirFirstCluster;        /* cluster number of first cluster of root dir */
+    USHORT  FsInfoSector;               /* sector number of FSINFO (usually 1) */
+    USHORT  BackupBootSector;           /* sector number of copy of boot sector */
+    UCHAR   Reserved[12];               /* reserved for future use */
+} BIOS_PARAMETER_BLOCK_EX;
 
-enum Fattype {
-    FATunknown,
-    FAT12,
-    FAT16,
-    FAT32
-};
+typedef struct _BOOT_SECTOR {
+    UCHAR   Jump[3];                    /* jump instruction to boot code */
+    UCHAR   Oem[8];                     /* "MSWIN4.1" */
+    BIOS_PARAMETER_BLOCK Bpb;           /* BIOS Parameter Block */
+    UCHAR   PhysicalDriveNumber;        /* Int 0x13 drive number, eg. 0x80 */
+    UCHAR   CurrentHead;                /* reserved for WinNT (usually 0) */
+    UCHAR   Signature;                  /* extended boot signature (0x29) */
+    ULONG   Id;                         /* volume serial number (date + time) */
+    UCHAR   VolumeLabel[11];            /* volume label as stored in the root directory */
+    UCHAR   SystemId[8];                /* informational! */
+} BOOT_SECTOR;
 
-struct Bpb {
-    uint8_t  BS_jmpBoot[3];    /* jump instruction to boot code */
-    uint8_t  BS_OEMName[8];    /* "MSWIN4.1" */
-    uint16_t BPB_BytsPerSec;   /* bytes per sector (512, 1k, 2k, 4k) */
-    uint8_t  BPB_SecPerClus;   /* sectors per cluster (2^n, 0<=n<=7) */
-    uint16_t BPB_RsvdSecCnt;   /* number of reserved sectors */
-    uint8_t  BPB_NumFATs;      /* count of FATs on the volume (usually 2) */
-    uint16_t BPB_RootEntCnt;   /* count of root directory entries (0 if FAT32) */
-    uint16_t BPB_TotSec16;     /* total count of sectors (0 if FAT32) */
-    uint8_t  BPB_Media;        /* media type, usally 0xf8 */
-    uint16_t BPB_FATSz16;      /* sectors occupied by one fat (FAT12 / FAT16) */
-    uint16_t BPB_SecPerTrk;    /* sectors per track for Int 0x13 */
-    uint16_t BPB_NumHeads;     /* numbers of heads for Int 0x13 */
-    uint32_t BPB_HiddSec;      /* count of sectors preceding the partition */
-    uint32_t BPB_TotSec32;     /* total count of all sectors of the volume */
-};
+typedef struct _BOOT_SECTOR_EX {
+    UCHAR   Jump[3];                    /* jump instruction to boot code */
+    UCHAR   Oem[8];                     /* "MSWIN4.1" */
+    BIOS_PARAMETER_BLOCK_EX Bpb;        /* BIOS Parameter Block */
+    UCHAR   PhysicalDriveNumber;        /* Int 0x13 drive number, eg. 0x80 */
+    UCHAR   CurrentHead;                /* reserved for WinNT (usually 0) */
+    UCHAR   Signature;                  /* extended boot signature (0x29) */
+    ULONG   Id;                         /* volume serial number (date + time) */
+    UCHAR   VolumeLabel[11];            /* volume label as stored in the root directory */
+    UCHAR   SystemId[8];                /* informational! */
+} BOOT_SECTOR_EX;
 
-struct Bpb16 {
-    uint8_t  BS_DrvNum;        /* Int 0x13 drive number, eg. 0x80 */
-    uint8_t  BS_Reserved1;     /* reserved for WinNT (usually 0) */
-    uint8_t  BS_BootSig;       /* extended boot signature (0x29) */
-    uint32_t BS_VolID;         /* volume serial number (date + time) */
-    uint8_t  BS_VolLab[11];    /* volume label as stored in the root directory */
-    uint8_t  BS_FilSysType[8]; /* informational! */
-};
+//
+//  The directory entry record exists for every file/directory on the
+//  disk except for the root directory.
+//
 
-struct Bpb32 {
-    uint32_t BPB_FATSz32;      /* sectors occupied by one fat (FAT32) */
-    uint16_t BPB_ExtFlags;     /* FAT mirrored? */
-    uint16_t BPB_FSVer;        /* version number of FAT filesystem type */
-    uint32_t BPB_RootClus;     /* cluster number of first cluster of root dir */
-    uint16_t BPB_FSInfo;       /* sector number of FSINFO (usually 1) */
-    uint16_t BPB_BkBootSec;    /* sector number of copy of boot sector */
-    uint8_t  BPB_Reserved[12]; /* reserved for future use */
+typedef struct _DIRENT {
+    UCHAR   FileName[11];
+    UCHAR   Attributes;
+    UCHAR   NtByte;
+    UCHAR   CreationMSec;
+    ULONG   CreationTime;
+    USHORT  LastAccessDate;
+    union {
+        USHORT  ExtendedAttributes;
+        USHORT  FirstClusterOfFileHi;
+    };
+    ULONG   LastWriteTime;
+    USHORT  FirstClusterOfFile;
+    ULONG   FileSize;
+} DIRENT;
 
-    uint8_t  BS_DrvNum;        /* Int 0x13 drive number, eg. 0x80 */
-    uint8_t  BS_Reserved1;     /* reserved for WinNT (usually 0) */
-    uint8_t  BS_BootSig;       /* extended boot signature (0x29) */
-    uint32_t BS_VolID;         /* volume serial number (date + time) */
-    uint8_t  BS_VolLab[11];    /* volume label as stored in the root directory */
-    uint8_t  BS_FilSysType[8]; /* informational! */
-};
+//
+//  The first byte of a dirent describes the dirent.  There is also a routine
+//  to help in deciding how to interpret the dirent.
+//
 
-struct Dirent {
-    uint8_t  DIR_Name[11];
-    uint8_t  DIR_Attr;
-    uint8_t  DIR_NTRes;
-    uint8_t  DIR_CrtTimeTenth;
-    uint16_t DIR_CrtTime;
-    uint16_t DIR_CrtDate;
-    uint16_t DIR_LstAccDate;
-    uint16_t DIR_FstClusHI;
-    uint16_t DIR_WrtTime;
-    uint16_t DIR_WrtDate;
-    uint16_t DIR_FstClusLO;
-    uint32_t DIR_FileSize;
-};
+#define FAT_DIRENT_NEVER_USED           0x00
+#define FAT_DIRENT_REALLY_0E5           0x05
+#define FAT_DIRENT_DIRECTORY_ALIAS      0x2e
+#define FAT_DIRENT_DELETED              0xe5
 
-struct Ldirent {
-    uint8_t  LDIR_Ord;
-    uint8_t  LDIR_Name1[10];
-    uint8_t  LDIR_Attr;
-    uint8_t  LDIR_Type;
-    uint8_t  LDIR_Chksum;
-    uint8_t  LDIR_Name2[12];
-    uint16_t LDIR_FstClusLO;
-    uint8_t  LDIR_Name3[4];
-};
-"""  # noqa: E501
+//
+//  Define the various dirent attributes
+//
 
-c_fat = cstruct().load(fat_def)
+#define FAT_DIRENT_ATTR_READ_ONLY       0x01
+#define FAT_DIRENT_ATTR_HIDDEN          0x02
+#define FAT_DIRENT_ATTR_SYSTEM          0x04
+#define FAT_DIRENT_ATTR_VOLUME_ID       0x08
+#define FAT_DIRENT_ATTR_DIRECTORY       0x10
+#define FAT_DIRENT_ATTR_ARCHIVE         0x20
+#define FAT_DIRENT_ATTR_DEVICE          0x40
+#define FAT_DIRENT_ATTR_LFN             (FAT_DIRENT_ATTR_READ_ONLY | \
+                                         FAT_DIRENT_ATTR_HIDDEN |    \
+                                         FAT_DIRENT_ATTR_SYSTEM |    \
+                                         FAT_DIRENT_ATTR_VOLUME_ID)
 
-Fattype = c_fat.Fattype
+//
+//  This structure defines the on disk format on long file name dirents.
+//
 
-VALID_BPB_MEDIA = {0xF0, 0xF8, 0xF9, 0xFA, 0xFB, 0xFC, 0xFD, 0xFE, 0xFF}
+typedef struct _LFN_DIRENT {
+    UCHAR   Ordinal;
+    UCHAR   Name1[10];
+    UCHAR   Attributes;
+    UCHAR   Type;
+    UCHAR   Checksum;
+    UCHAR   Name2[12];
+    USHORT  MustBeZero;
+    UCHAR   Name3[4];
+} LFN_DIRENT;
 
-DATA_CLUSTER_MIN = 0x2
-DATA_CLUSTER_MAX = 0x0FFFFFEF
-END_OF_CLUSTER_MIN = 0x0FFFFFF8
-END_OF_CLUSTER_MAX = 0x0FFFFFFF
+#define FAT_LAST_LONG_ENTRY             0x40    // Ordinal field
+"""
 
-FAT12_EOC = 0xFF0
-BAD_CLUSTER = 0x0FFFFFF7
-FREE_CLUSTER = 0x0
+c_fat = cstruct(fat_def)

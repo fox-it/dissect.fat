@@ -1,320 +1,354 @@
+# Resources:
+# - https://learn.microsoft.com/en-us/windows/win32/fileio/exfat-specification
 from __future__ import annotations
 
-import logging
-import os
-import struct
-from collections import OrderedDict
-from itertools import groupby
-from operator import itemgetter
-from typing import BinaryIO
+import datetime
+from functools import cached_property, lru_cache
+from typing import TYPE_CHECKING, BinaryIO
 
-from dissect.util.stream import RangeStream, RunlistStream
+from dissect.util.stream import RangeStream
+from dissect.util.ts import dostimestamp
 
-from dissect.fat.c_exfat import (
-    BITMAP_ENTRY,
-    DIR_ENTRY_SIZE,
-    EOC,
-    FAT_ENTRY_SIZE,
-    FILE_ENTRY,
-    NO_VOLUME_LABEL_ENTRY,
-    UPCASE_TABLE_ENTRY,
-    VOLUME_LABEL_ENTRY,
-    c_exfat,
-)
-from dissect.fat.exceptions import InvalidHeaderMagic
+from dissect.fat.base import FAT, FS, BaseDirectoryEntry, FatType, iter_dirent
+from dissect.fat.c_exfat import c_exfat
+from dissect.fat.c_fat import c_fat
+from dissect.fat.exception import DeletedDirectoryError, InvalidBootSector, LastEmptyDirectoryError
 
-__all__ = ["ExFAT"]
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
-log = logging.getLogger(__name__)
-log.setLevel(os.getenv("DISSECT_LOG_EXFAT", "CRITICAL"))
+    from dissect.util.stream import RunlistStream
+
+    from dissect.fat.c_exfat import PRIMARY_DIRENT, SECONDARY_DIRENT
 
 
-class ExFAT:
-    def __init__(self, fh: BinaryIO):
-        self.filesystem = fh
+# Main boot region is 12 sectors long
+BOOT_REGION_SIZE = 512 * 12
+
+
+class ExFAT(FS):
+    """exFAT filesystem implementation.
+
+    Args:
+        fh: File-like object containing the FAT filesystem.
+    """
+
+    def __init__(self, fh: BinaryIO) -> None:
+        self.fh = fh
+        self.type = FatType.EXFAT
+
         fh.seek(0)
+        boot_region = fh.read(BOOT_REGION_SIZE)
+        self.boot_sector = c_exfat.BOOT_SECTOR(boot_region)
+        validate_boot_sector(self.boot_sector)
 
-        self.vbr = c_exfat.EXFAT_HEADER(fh.read(512))
-        self.fs_name = self.vbr.fs_name
-        if self.fs_name != b"EXFAT   ":
-            raise InvalidHeaderMagic("Invalid exFAT header magic")
+        # Checksum is calculated over the first 11 sectors
+        self.checksum = _checksum32(boot_region[: BOOT_REGION_SIZE - 512])
+        # Read the stored checksum
+        if self.checksum != c_exfat.uint32(boot_region[BOOT_REGION_SIZE - 512 : BOOT_REGION_SIZE]):
+            raise InvalidBootSector("Invalid exFAT boot region checksum")
 
-        # These get stored as exponents
-        self.sector_size = 2**self.vbr.bytes_per_sector_exp
-        self.cluster_size = self.sector_size * (2**self.vbr.sectors_per_cluster_exp)
+        # Sector size in bytes
+        self.sector_size = 1 << self.boot_sector.BytesPerSectorShift
+        # Cluster size in bytes
+        self.cluster_size = self.sector_size * (1 << self.boot_sector.SectorsPerClusterShift)
 
-        self.fat_sector = self.vbr.fat_sector  # Almost always sector 128 (absolute)
-        self.fat_sector_count = self.vbr.fat_sector_count
-        self.fat_size = self.fat_sector_count * self.sector_size
-        self.fat = RangeStream(fh, (self.fat_sector * self.sector_size), self.fat_size)
-
-        self.cluster_heap_sector = self.vbr.cluster_heap_sector
-        self.cluster_count = self.vbr.cluster_heap_count
-        self.root_dir_cluster = self.vbr.root_dir_cluster
-        self.root_dir_sector = self.cluster_to_sector(self.root_dir_cluster)
-        self.root_directory = RootDirectory(fh, self.root_dir_cluster, self)
-        self.files = self.root_directory.dict  # maybe linked list to be able to traverse sub directories easier?
-
-        self.alloc_bitmap = self.root_directory.bitmap_entry
-        self.upcase_table = self.root_directory.upcase_entry
-        self.volume_label = self.root_directory.volume_entry.volume_label.strip("\x00")
-
-    def cluster_to_sector(self, cluster: int) -> int | None:
-        """Returns the clusters' corresponding sector address.
-
-        Args:
-            cluster (int): cluster address
-
-        Returns:
-            int: corresponding sector address if available
-        """
-        sector = ((cluster - 2) * (2**self.vbr.sectors_per_cluster_exp)) + self.cluster_heap_sector
-        return sector if sector > 0 else None
-
-    def sector_to_cluster(self, sector: int) -> int | None:
-        """Returns the sectors' corresponding cluster address.
-
-        Args:
-            sector (int): sector address
-
-        Returns:
-            int: corresponding cluster address if available
-        """
-        cluster = ((sector - self.cluster_to_sector(2)) // self.sector_size) + 2
-        return cluster if cluster >= 2 else None
-
-    def runlist(
-        self, starting_cluster: int, not_fragmented: bool = True, size: int | None = None
-    ) -> list[tuple[int, int]]:
-        """Creates a RunlistStream compatible runlist from exFAT FAT structures, in sectors.
-
-        Args:
-            starting_cluster (int): First cluster of file, folder or location in question
-
-        Returns:
-            runlist: [(sector_offset, run_length_in_sectors)]
-        """
-        # If file is not fragmented clusters will not be present in the FAT
-        cluster_chain = [starting_cluster] if not_fragmented else self.get_cluster_chain(starting_cluster)
-        runlist = []
-        sectors_per_cluster = 2**self.vbr.sectors_per_cluster_exp
-
-        # TODO Graceful way to construct a runlist of non-fragmented streams spanning multiple sectors
-        if size:
-            run = -(-size // self.cluster_size) * sectors_per_cluster
-            runlist.append((self.cluster_to_sector(cluster_chain[0]), run))
-        else:
-            # This is a somewhat convoluted, but short way to group successive
-            # clusters together.
-            # As the cluster numbers in the cluster_chain are strictly
-            # incrementing, a successive range of clusters will have the same
-            # delta with respect to their position in the cluster_chain, which
-            # is different from any other successive range, which is what is
-            # used in the groupby().
-            # Example: [(3, 1), (4, 1), (6, 1)] becomes [(3, 2), (6, 1)]
-            for _, cluster_group in groupby(enumerate(cluster_chain), lambda i: i[0] - i[1]):
-                run = list(map(itemgetter(1), cluster_group))
-                start_cluster = run[0]
-                run_len = len(run) * sectors_per_cluster
-                runlist.append((self.cluster_to_sector(start_cluster), run_len))
-
-        return runlist
-
-    def get_cluster_chain(self, starting_cluster: int) -> list[int]:
-        """Reads the on disk FAT to construct the cluster chain.
-
-        Args:
-            starting_cluster (int): cluster to look-up the chain from
-
-        Returns:
-            list: Chain of clusters. Including starting_cluster
-        """
-        next_ = 0x00000000
-        chain = []
-
-        if starting_cluster < 2:
-            return chain
-
-        while next_ != EOC:
-            self.fat.seek(starting_cluster * FAT_ENTRY_SIZE)
-            next_ = struct.unpack("<L", self.fat.read(FAT_ENTRY_SIZE))[0]
-            chain.append(starting_cluster)
-            starting_cluster = next_
-
-        return chain
-
-    @staticmethod
-    def _utc_timezone(timezone: int) -> dict[str, str | int]:
-        """Converts a Microsoft exFAT timezone byte to its UTC timezone equivalent.
-
-        Args:
-            timezone (int): exFAT timezone byte
-
-        Returns:
-            dict: UTC name (str), UTC offset in minutes (int)
-        """
-        #    utc_bool -64 32 16 : 8 4 2 1
-        #              ^ sign
-        TIMEZONE_MINUTE_INCREMENT = 15
-        utc_enabled = timezone >> 7
-        signed = (timezone >> 6) & 0x11  # Check if the second bit is set
-
-        if utc_enabled:
-            if signed:
-                utc_minute_offset = ((timezone & 0x3F) - 64) * TIMEZONE_MINUTE_INCREMENT
-            else:
-                utc_minute_offset = (timezone & 0x7F) * TIMEZONE_MINUTE_INCREMENT
-
-            hours, minutes = divmod(utc_minute_offset, 60)
-            utc_name = f"UTC{hours:+03}:{minutes:02}"
-
-            return {"name": utc_name, "offset": utc_minute_offset}
-
-        return {"name": "localtime", "offset": 0}
-
-
-class RootDirectory:
-    def __init__(self, fh: BinaryIO, location: int, exfat: ExFAT):
-        self.exfat = exfat
-        self.location = location
-        self.size = 0
-        self.root_dir = None
-        self.volume_entry = None
-        self.upcase_entry = None
-        self.bitmap_entry = None
-        self.dict = OrderedDict()
-        self._parse_root_dir(fh)
-
-    def _parse_root_dir(self, fh: BinaryIO) -> None:
-        """Parses the passed fh to construct the Root directory object."""
-        # Root dir is always present in FAT so we pass False to traverse the FAT table
-        # thus root dir is per definition fragmented
-        runlist = self.exfat.runlist(self.location, False)
-        size = 0  # in bytes
-
-        # Calculate size of rootdir from runlist since rootdir has no size attribute
-        for run in runlist:
-            size += run[1] * self.exfat.sector_size
-
-        self.size = size
-        self.root_dir = RunlistStream(fh, runlist, self.size, self.exfat.sector_size)
-        self.dict = self._create_root_dir(self.root_dir)
-
-    def _parse_subdir(self, entry: c_exfat.FILE) -> OrderedDict:
-        """Parses the given sub directory file directory entry for containing files.
-
-        Args:
-            entry (FILE): Directory FILE entry
-
-        Returns:
-            OrderedDict: Containing files in sub directory
-        """
-        folder_location = entry.stream.location
-        folder_size = entry.stream.data_length  # in bytes
-        folder_runlist = self.exfat.runlist(folder_location, not_fragmented=entry.stream.flags.not_fragmented)
-
-        fh = RunlistStream(self.exfat.filesystem, folder_runlist, folder_size, self.exfat.sector_size)
-        return self._parse_file_entries(fh)
-
-    @staticmethod
-    def _construct_filename(fn_entries: list[c_exfat.FILENAME_DIRECTORY_ENTRY], is_dir: bool = False) -> str:
-        """Assembles the filename from given file name directory entries.
-
-        Args:
-            fn_entries (list): A list of exFAT file name directory entries
-
-        Returns:
-            str: Name of file or folder stripped from trailing null values
-        """
-        filename = []
-        if len(fn_entries) == 1:
-            filename = fn_entries[0].filename.strip("\x00")
-        else:
-            for fn_entry in fn_entries:
-                filename.append(fn_entry.filename)
-
-            filename = "".join(filename).strip("\x00")
-
-        return filename if not is_dir else filename + "/"
-
-    def _parse_file_entries(self, fh: BinaryIO) -> OrderedDict:
-        """Finds and parses file entries in a given file handle (file like object).
-
-        Args:
-            fh (Stream object): Any stream object
-
-        Returns:
-            OrderedDict: Found and parsed file directory entries
-        """
-        entries = OrderedDict()
-
-        while fh.tell() < fh.size:
-            entry = c_exfat.FILE_DIRECTORY_ENTRY(fh.read(DIR_ENTRY_SIZE))
-
-            if entry.entry_type == FILE_ENTRY:  # Or entry.entry_type == 0x05:
-                # Entry is a file so we reuse it
-                metadata = entry
-
-                # -1 because the metadata entry includes the stream dir entry in its count
-                fnentry_count = metadata.subentry_count - 1
-
-                stream = c_exfat.STREAM_DIRECTORY_ENTRY(fh.read(DIR_ENTRY_SIZE))
-                fn_entries = [c_exfat.FILENAME_DIRECTORY_ENTRY(fh.read(DIR_ENTRY_SIZE)) for _ in range(fnentry_count)]
-
-                file_ = c_exfat.FILE(metadata=metadata, stream=stream, fn_entries=fn_entries)
-                if file_.metadata.attributes.directory:
-                    # A directory will have its own file entry as its first element and an ordered dict
-                    # of file entry contained in it which can be accessed by their corresponding keys
-                    filename = self._construct_filename(file_.fn_entries)
-                    entries[filename] = (file_, self._parse_subdir(file_))
-                else:
-                    filename = self._construct_filename(file_.fn_entries)
-                    entries[filename] = (file_, None)
-            elif entry.entry_type == 0x00:
-                # We could break early on entry_type==0x00 (end-of-directory)
-                # since all following entries are expected to be 0x00 as well.
-                pass
-            else:
-                self._non_file_entries(entry)
-
-        return entries
-
-    def _non_file_entries(self, entry: c_exfat.FILE_DIRECTORY_ENTRY) -> None:
-        if entry.entry_type == VOLUME_LABEL_ENTRY or entry.entry_type == NO_VOLUME_LABEL_ENTRY:
-            self.volume_entry = c_exfat.VOLUME_DIRECTORY_ENTRY(entry.dumps())
-        elif entry.entry_type == BITMAP_ENTRY:
-            self.bitmap_entry = c_exfat.BITMAP_DIRECTORY_ENTRY(entry.dumps())
-        elif entry.entry_type == UPCASE_TABLE_ENTRY:
-            self.upcase_entry = c_exfat.UPCASE_DIRECTORY_ENTRY(entry.dumps())
-
-    def _create_root_dir(self, root_dir: BinaryIO) -> OrderedDict:
-        """Since exFAT does not have a dedicated root directory entry
-        one has to be constructed form available parameters during filesystem parsing.
-
-        This is ballpark so no real forensic conclusions should be based on the information of the root entry
-        """
-        metadata = c_exfat.FILE_DIRECTORY_ENTRY(
-            entry_type=0x85, subentry_count=2, attributes=c_exfat.ATTRIBUTES(directory=0b1)
+        fat_stream = RangeStream(
+            fh,
+            # FatOffset is stored in sectors
+            self.boot_sector.FatOffset * self.sector_size,
+            # FatLength is stored in sectors
+            self.boot_sector.FatLength * self.sector_size,
+        )
+        self.fat = FAT(fat_stream, fat_stream.size, 32)
+        self.data = RangeStream(
+            fh,
+            # ClusterHeapOffset is stored in sectors
+            self.boot_sector.ClusterHeapOffset * self.sector_size,
+            # ClusterCount is stored in clusters
+            self.boot_sector.ClusterCount * self.cluster_size,
         )
 
-        stream = c_exfat.STREAM_DIRECTORY_ENTRY(
-            entry_type=0xC0,
-            flags=c_exfat.FILE_FLAGS(allocation_possible=0b0, not_fragmented=0b0),
-            filename_length=1,
-            location=self.location,
-            data_length=self.size,
-        )
+        self.root = RootDirectory(self)
 
-        fn_entries = [
-            c_exfat.FILENAME_DIRECTORY_ENTRY(
-                entry_type=0xC1, flags=0x00, filename="/\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
-            )
+        self.volume_label = ""
+        with self.root.open() as rootfh:
+            dirent = c_exfat.VOLUME_LABEL_DIRENT(rootfh)
+            if dirent.EntryType == c_exfat.EXFAT_DIRENT_TYPE_VOLUME_LABEL:
+                self.volume_label = bytes(dirent.VolumeLabel).decode("utf-16").rstrip("\x00")
+
+        # Volume serial number, hex encoded
+        self.volume_id = f"{self.boot_sector.VolumeSerialNumber:x}"
+
+
+class DirectoryEntry(BaseDirectoryEntry):
+    """exFAT directory entry implementation.
+
+    Args:
+        fs: The exFAT filesystem this directory entry belongs to.
+        fh: File-like object positioned at the start of the directory entry to read.
+    """
+
+    fs: ExFAT
+    dirent: PRIMARY_DIRENT
+    secondary_dirents: list[SECONDARY_DIRENT]
+
+    def __init__(self, fs: ExFAT, fh: BinaryIO | None):
+        super().__init__(fs, fh)
+        self.streament = None
+
+        if self.type in (c_exfat.EXFAT_DIRENT_TYPE_ALLOC_BITMAP, c_exfat.EXFAT_DIRENT_TYPE_VOLUME_LABEL):
+            self.streament = self.dirent
+        elif self.type == c_exfat.EXFAT_DIRENT_TYPE_FILE:
+            for entry in self.secondary_dirents:
+                if entry.EntryType == c_exfat.EXFAT_DIRENT_TYPE_STREAM_EXT:
+                    self.streament = entry
+                    break
+
+    def _read_dirent(self, fh: BinaryIO) -> tuple[PRIMARY_DIRENT, list[SECONDARY_DIRENT]]:
+        """Read a directory entry from the given file handle, handling secondary entries if present.
+
+        Args:
+            fh: File-like object positioned at the start of the directory entry to read.
+
+        Returns:
+            A tuple containing the primary directory entry and a list of secondary directory entries.
+        """
+        buf = fh.read(c_exfat.EXFAT_DIRENT_SIZE)
+        secondary_dirents = []
+
+        if not buf or buf[0] == c_exfat.EXFAT_DIRENT_TYPE_END:
+            raise LastEmptyDirectoryError("Dirent is the last empty entry")
+
+        if buf[0] < c_exfat.EXFAT_DIRENT_TYPE_UNUSED:
+            raise DeletedDirectoryError("Dirent is marked as deleted")
+
+        match buf[0]:
+            case c_exfat.EXFAT_DIRENT_TYPE_ALLOC_BITMAP:
+                dirent = c_exfat.ALLOC_BITMAP_DIRENT(buf)
+            case c_exfat.EXFAT_DIRENT_TYPE_UPCASE:
+                dirent = c_exfat.UPCASE_DIRENT(buf)
+            case c_exfat.EXFAT_DIRENT_TYPE_VOLUME_LABEL:
+                dirent = c_exfat.VOLUME_LABEL_DIRENT(buf)
+            case c_exfat.EXFAT_DIRENT_TYPE_FILE:
+                dirent = c_exfat.FILE_DIRENT(buf)
+            case c_exfat.EXFAT_DIRENT_TYPE_VOLUME_GUID:
+                dirent = c_exfat.VOLUME_GUID_DIRENT(buf)
+            case _:
+                dirent = c_exfat.GENERIC_PRIMARY_DIRENT(buf)
+
+        for _ in range(getattr(dirent, "SecondaryCount", 0)):
+            buf = fh.read(c_exfat.EXFAT_DIRENT_SIZE)
+            match buf[0]:
+                case c_exfat.EXFAT_DIRENT_TYPE_STREAM_EXT:
+                    secondary = c_exfat.STREAM_EXT_DIRENT(buf)
+                case c_exfat.EXFAT_DIRENT_TYPE_FILE_NAME:
+                    secondary = c_exfat.FILE_NAME_DIRENT(buf)
+                case c_exfat.EXFAT_DIRENT_TYPE_VENDOR_EXT:
+                    secondary = c_exfat.VENDOR_EXT_DIRENT(buf)
+                case c_exfat.EXFAT_DIRENT_TYPE_VENDOR_ALLOC:
+                    secondary = c_exfat.VENDOR_ALLOC_DIRENT(buf)
+                case _:
+                    secondary = c_exfat.GENERIC_SECONDARY_DIRENT(buf)
+            secondary_dirents.append(secondary)
+
+        return dirent, secondary_dirents
+
+    @cached_property
+    def type(self) -> int:
+        """Return the type of the directory entry."""
+        return self.dirent.EntryType
+
+    @cached_property
+    def flags(self) -> int:
+        """Return the flags of the directory entry."""
+        if (flags := getattr(self.dirent, "GeneralPrimaryFlags", None)) is not None:
+            return flags
+
+        if self.streament is not None and (flags := getattr(self.streament, "GeneralSecondaryFlags", None)) is not None:
+            return flags
+
+        return 0
+
+    @cached_property
+    def name(self) -> str:
+        """Return the name of the directory entry."""
+        if self.type == c_exfat.EXFAT_DIRENT_TYPE_ALLOC_BITMAP:
+            return "$ALLOC_BITMAP"
+
+        if self.type == c_exfat.EXFAT_DIRENT_TYPE_UPCASE:
+            return "$UPCASE_TABLE"
+
+        name_entries: list[c_exfat.FILE_NAME_DIRENT] = [
+            e for e in self.secondary_dirents if e.EntryType == c_exfat.EXFAT_DIRENT_TYPE_FILE_NAME
         ]
+        return b"".join([bytes(e.FileName) for e in name_entries]).decode("utf-16").rstrip("\x00")
 
-        root_entry = OrderedDict()
-        root_entry["/"] = (
-            c_exfat.FILE(metadata=metadata, stream=stream, fn_entries=fn_entries),
-            self._parse_file_entries(root_dir),
+    @cached_property
+    def attr(self) -> int:
+        """Return the attribute value of the directory entry."""
+        return self.dirent.FileAttributes if self.type == c_exfat.EXFAT_DIRENT_TYPE_FILE else 0
+
+    @cached_property
+    def size(self) -> int:
+        """Return the size of the directory entry in bytes."""
+        if self.streament is None:
+            return super().size
+
+        return self.streament.DataLength
+
+    @cached_property
+    def cluster(self) -> int:
+        """Return the starting cluster number of the directory entry."""
+        return self.streament.FirstCluster
+
+    @cached_property
+    def ctime(self) -> datetime.datetime:
+        """Return the creation time of the directory entry."""
+        if self.type == c_exfat.EXFAT_DIRENT_TYPE_FILE:
+            return dostimestamp(
+                self.dirent.CreateTimestamp,
+                self.dirent.Create10msIncrement,
+            ).replace(tzinfo=_timezone(self.dirent.CreateUtcOffset))
+
+        return super().ctime
+
+    @cached_property
+    def atime(self) -> datetime.datetime:
+        """Return the last access time of the directory entry."""
+        if self.type == c_exfat.EXFAT_DIRENT_TYPE_FILE:
+            return dostimestamp(
+                self.dirent.LastAccessedTimestamp,
+            ).replace(tzinfo=_timezone(self.dirent.LastAccessedUtcOffset))
+
+        return super().atime
+
+    @cached_property
+    def mtime(self) -> datetime.datetime:
+        """Return the last modification time of the directory entry."""
+        if self.type == c_exfat.EXFAT_DIRENT_TYPE_FILE:
+            return dostimestamp(
+                self.dirent.LastModifiedTimestamp,
+                self.dirent.LastModified10msIncrement,
+            ).replace(tzinfo=_timezone(self.dirent.LastModifiedUtcOffset))
+
+        return super().mtime
+
+    def _iterdir(self, fh: BinaryIO) -> Iterator[DirectoryEntry]:
+        for entry in iter_dirent(DirectoryEntry, self.fs, fh):
+            if entry.type == c_exfat.EXFAT_DIRENT_TYPE_VOLUME_LABEL:
+                continue
+
+            yield entry
+
+    def open(self) -> RunlistStream | RangeStream:
+        if self.flags & c_exfat.EXFAT_DIRENT_FLAG_NO_FAT_CHAIN:
+            return RangeStream(
+                self.fs.data,
+                (self.cluster - 2) * self.fs.cluster_size,
+                self.size,
+                self.fs.cluster_size,
+            )
+
+        return super().open()
+
+
+class RootDirectory(DirectoryEntry):
+    """Root directory implementation."""
+
+    def __init__(self, fs: ExFAT):
+        super().__init__(fs, None)
+
+    @cached_property
+    def type(self) -> int:
+        return c_exfat.EXFAT_DIRENT_TYPE_UNUSED
+
+    @cached_property
+    def name(self) -> str:
+        return ""
+
+    @cached_property
+    def attr(self) -> int:
+        return c_fat.FAT_DIRENT_ATTR_DIRECTORY
+
+    @cached_property
+    def cluster(self) -> int:
+        return self.fs.boot_sector.FirstClusterOfRootDirectory
+
+
+def _checksum32(data: bytes) -> int:
+    checksum = 0
+    for idx, byte in enumerate(data):
+        if idx in (106, 107, 112):  # skip VolumeFlags, PercentInUse
+            continue
+
+        checksum = ((checksum << 31) | (checksum >> 1)) + byte
+        checksum &= 0xFFFFFFFF
+    return checksum
+
+
+@lru_cache(8)
+def _timezone(timezone: int) -> datetime.timezone:
+    """Convert exFAT timezone byte to a timezone object."""
+    # timezone is a signed 7-bit number of 15-minute intervals from UTC
+    offset = (timezone & 0x3F) - 0x40 if (timezone & 0x40) else (timezone & 0x7F)
+    return datetime.timezone(datetime.timedelta(minutes=offset * 15))
+
+
+def validate_boot_sector(sector: c_exfat.BOOT_SECTOR | bytes) -> None:
+    """Validate the boot sector fields according to exFAT specification.
+
+    Args:
+        sector: The boot sector to validate, either as a parsed structure or as raw bytes.
+
+    Raises:
+        InvalidBootSector: If any field in the boot sector is invalid according to exFAT specification.
+    """
+    if isinstance(sector, bytes):
+        sector = c_exfat.BOOT_SECTOR(sector)
+
+    if any(byte != 0 for byte in sector.MustBeZero):
+        raise InvalidBootSector("exFAT BPB must be all zeros")
+
+    if not (sector.JumpBoot[0] == 0xEB and sector.JumpBoot[1] == 0x76 and sector.JumpBoot[2] == 0x90):
+        raise InvalidBootSector(f"Invalid exFAT JumpBoot: {sector.JumpBoot!r}")
+
+    if sector.NumberOfFats not in (1, 2):
+        raise InvalidBootSector(f"Invalid exFAT NumberOfFats, must be 1 or 2: {sector.NumberOfFats}")
+
+    if sector.BytesPerSectorShift not in range(9, 13):
+        raise InvalidBootSector(
+            f"Invalid exFAT BytesPerSectorShift, must be between 9 and 12: {sector.BytesPerSectorShift}"
         )
 
-        return root_entry
+    if sector.SectorsPerClusterShift not in range(25 - sector.BytesPerSectorShift):
+        raise InvalidBootSector(
+            f"Invalid exFAT SectorsPerClusterShift, must be between 0 and {25 - sector.BytesPerSectorShift}: "
+            f"{sector.SectorsPerClusterShift}"
+        )
+
+    max_fat_offset = sector.ClusterHeapOffset - (sector.FatLength * sector.NumberOfFats)
+    if 24 < sector.FatOffset > max_fat_offset:
+        raise InvalidBootSector(f"Invalid exFAT FatOffset, must be between 24 and {max_fat_offset}: {sector.FatOffset}")
+
+    if sector.ClusterCount > 0x0FFFFFF5:
+        raise InvalidBootSector(f"Invalid exFAT ClusterCount, must be less than 0x0FFFFFF5: 0x{sector.ClusterCount:x}")
+
+    vol_length_min = 1 << (20 - sector.BytesPerSectorShift)
+    if sector.VolumeLength < vol_length_min:
+        raise InvalidBootSector(f"Invalid exFAT VolumeLength, must be at least 1 MiB: {sector.VolumeLength}")
+
+
+def is_exfat(fh: BinaryIO) -> bool:
+    """Check if the given file-like object contains an exFAT filesystem by validating the BPB.
+
+    Args:
+        fh: File-like object to check.
+    """
+    fh.seek(0)
+    try:
+        validate_boot_sector(fh.read(512))
+    except InvalidBootSector:
+        return False
+    else:
+        return True
